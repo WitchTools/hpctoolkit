@@ -85,7 +85,8 @@ void hpcrun_stats_num_deadBytes_inc(long val);
 void hpcrun_stats_num_newBytes_inc(long val);
 void hpcrun_stats_num_oldBytes_inc(long val);
 void hpcrun_stats_num_oldAppxBytes_inc(long val);
-void hpcrun_stats_num_reuse_inc(long val);
+void hpcrun_stats_num_reuseTemporal_inc(long val);
+void hpcrun_stats_num_reuseSpatial_inc(long val);
 void hpcrun_stats_num_loadedBytes_inc(long val);
 
 

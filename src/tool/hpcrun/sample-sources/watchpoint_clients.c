@@ -144,14 +144,20 @@ int load_metric_id = -1;
 int dead_metric_id = -1;
 int measured_metric_id = -1;
 int latency_metric_id = -1;
-int temporal_metric_id = -1;
-int spatial_metric_id = -1;
+
+int temporal_reuse_metric_id = -1;
+int spatial_reuse_metric_id = -1;
+int reuse_time_distance_metric_id = -1; // use rdtsc() to represent the reuse distance
+int reuse_cacheline_distance_metric_id = -1; // use cache miss to reprent the reuse distance
+int reuse_trapped_metric_id = -1; // the times of a watch point trapped
+
 int false_ww_metric_id = -1;
 int false_rw_metric_id = -1;
 int false_wr_metric_id = -1;
 int true_ww_metric_id = -1;
 int true_rw_metric_id = -1;
 int true_wr_metric_id = -1;
+
 
 #define NUM_WATERMARK_METRICS (4)
 int curWatermarkId = 0;
@@ -193,8 +199,7 @@ __thread WPStats_t wpStats;
 #define WP_DEADSPY_EVENT_NAME "WP_DEADSPY"
 #define WP_REDSPY_EVENT_NAME "WP_REDSPY"
 #define WP_LOADSPY_EVENT_NAME "WP_LOADSPY"
-#define WP_TEMPORAL_REUSE_EVENT_NAME "WP_TEMPORAL_REUSE"
-#define WP_SPATIAL_REUSE_EVENT_NAME "WP_SPATIAL_REUSE"
+#define WP_REUSE_EVENT_NAME "WP_REUSE"
 #define WP_FALSE_SHARING_EVENT_NAME "WP_FALSE_SHARING"
 #define WP_TRUE_SHARING_EVENT_NAME "WP_TRUE_SHARING"
 #define WP_ALL_SHARING_EVENT_NAME "WP_ALL_SHARING"
@@ -207,8 +212,7 @@ typedef enum WP_CLIENT_ID{
     WP_DEADSPY,
     WP_REDSPY,
     WP_LOADSPY,
-    WP_TEMPORAL_REUSE,
-    WP_SPATIAL_REUSE,
+    WP_REUSE,
     WP_FALSE_SHARING,
     WP_ALL_SHARING,
     WP_TRUE_SHARING,
@@ -253,7 +257,8 @@ __thread uint64_t falseRWIns = 0;
 __thread uint64_t trueWWIns = 0;
 __thread uint64_t trueWRIns = 0;
 __thread uint64_t trueRWIns = 0;
-__thread uint64_t reuse = 0;
+__thread uint64_t reuseTemporal = 0;
+__thread uint64_t reuseSpatial = 0;
 
 // Some stats
 __thread long int correct=0;
@@ -288,8 +293,7 @@ __thread long ipDiff=0;
 
 static WPTriggerActionType DeadStoreWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt);
 static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOffseti, int safeAccessLen, WatchPointTrigger_t * wt);
-static WPTriggerActionType TemporalReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt);
-static WPTriggerActionType SpatialReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt);
+static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt);
 static WPTriggerActionType LoadLoadWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt);
 static WPTriggerActionType FalseSharingWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt);
 static WPTriggerActionType AllSharingWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt);
@@ -324,21 +328,13 @@ static WpClientConfig_t wpClientConfig[] = {
         .preWPAction = DISABLE_WP,
         .configOverrideCallback = LoadSpyWPConfigOverride
     },
-    /**** Temporal Reuse ***/
+    /**** Reuse ***/
     {
-        .id = WP_TEMPORAL_REUSE,
-        .name = WP_TEMPORAL_REUSE_EVENT_NAME,
-        .wpCallback = TemporalReuseWPCallback,
+        .id = WP_REUSE,
+        .name = WP_REUSE_EVENT_NAME,
+        .wpCallback = ReuseWPCallback,
         .preWPAction = DISABLE_WP,
-        .configOverrideCallback = TemporalReuseWPConfigOverride
-    },
-    /**** Spatial Reuse ***/
-    {
-        .id = WP_SPATIAL_REUSE,
-        .name = WP_SPATIAL_REUSE_EVENT_NAME,
-        .wpCallback = SpatialReuseWPCallback,
-        .preWPAction = DISABLE_WP,
-        .configOverrideCallback = SpatialReuseWPConfigOverride
+        .configOverrideCallback = ReuseWPConfigOverride
     },
     /**** False Sharing ***/
     {
@@ -431,6 +427,7 @@ static void PopulateBlackListAddresses() {
             const char delim[] = " \n";
             addr = strtok_r(l, delim, &save);
             char* perms = strtok_r(NULL, delim, &save);
+            (void) perms; //supress compiler's warning
             // skip 3 tokens
             for (int i=0; i < 3; i++) { (void) strtok_r(NULL, delim, &save);}
             char* name = strtok_r(NULL, delim, &save);
@@ -525,13 +522,11 @@ static void ClientTermination(){
             hpcrun_stats_num_oldBytes_inc(oldBytes);
             hpcrun_stats_num_oldAppxBytes_inc(oldAppxBytes);
             break;
-        case WP_TEMPORAL_REUSE:
+        case WP_REUSE:
             hpcrun_stats_num_accessedIns_inc(accessedIns);
-            hpcrun_stats_num_reuse_inc(reuse);
-            break;
-        case WP_SPATIAL_REUSE:
+            hpcrun_stats_num_reuseTemporal_inc(reuseTemporal);
             hpcrun_stats_num_accessedIns_inc(accessedIns);
-            hpcrun_stats_num_reuse_inc(reuse);
+            hpcrun_stats_num_reuseSpatial_inc(reuseSpatial);
             break;
         case WP_FALSE_SHARING:
         case WP_IPC_FALSE_SHARING:
@@ -815,16 +810,18 @@ METHOD_FN(process_event_list, int lush_metrics)
             hpcrun_set_metric_info_and_period(redApprox_metric_id, "BYTES_RED_APPROX", MetricFlags_ValFmt_Int, 1, metric_property_none);
             break;
             
-        case WP_TEMPORAL_REUSE:
-            temporal_metric_id = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(temporal_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
+        case WP_REUSE:
+            temporal_reuse_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(temporal_reuse_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            spatial_reuse_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(spatial_reuse_metric_id, "SPATIAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            reuse_time_distance_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_time_distance_metric_id, "TIME_DISTANCE", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            reuse_cacheline_distance_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_cacheline_distance_metric_id, "CACHELIN_DISTANCE", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            reuse_trapped_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_trapped_metric_id, "REUSE_TRAP_COUNT", MetricFlags_ValFmt_Int, 1, metric_property_none);
             break;
-            
-        case WP_SPATIAL_REUSE:
-            spatial_metric_id = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(spatial_metric_id, "SPATIAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
-            break;
-            
         case WP_ALL_SHARING:
         case WP_IPC_ALL_SHARING:
             // must have a canonical load map across processes
@@ -875,9 +872,7 @@ METHOD_FN(display_events)
     printf("---------------------------------------------------------------------------\n");
     printf("%s\n", WP_LOADSPY_EVENT_NAME);
     printf("---------------------------------------------------------------------------\n");
-    printf("%s\n", WP_TEMPORAL_REUSE_EVENT_NAME);
-    printf("---------------------------------------------------------------------------\n");
-    printf("%s\n", WP_SPATIAL_REUSE_EVENT_NAME);
+    printf("%s\n", WP_REUSE_EVENT_NAME);
     printf("---------------------------------------------------------------------------\n");
     printf("%s\n", WP_FALSE_SHARING_EVENT_NAME);
     printf("---------------------------------------------------------------------------\n");
@@ -1066,6 +1061,19 @@ static inline void UpdateConcatenatedPathPair(void *ctxt, cct_node_t * oldNode, 
     node = hpcrun_cct_insert_path_return_leaf(v.sample_node, node);
     // update the foundMetric
     cct_metric_data_increment(metricId, node, (cct_metric_data_t){.i = metricInc});
+}
+static inline void UpdateConcatenatedPathPairMultiple(void *ctxt, cct_node_t * oldNode, const void * joinNode, int *metricIdArray, uint64_t *metricIncArray, uint32_t numMetric){
+    if (numMetric == 0) return;
+    // unwind call stack once
+    sample_val_t v = hpcrun_sample_callpath(ctxt, metricIdArray[0], SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
+    // insert a special node
+    cct_node_t *node = hpcrun_insert_special_node(oldNode, joinNode);
+    // concatenate call paths
+    node = hpcrun_cct_insert_path_return_leaf(v.sample_node, node);
+    for(uint32_t i = 0; i < numMetric; i++){
+        // update the foundMetric
+        cct_metric_data_increment(metricIdArray[i], node, (cct_metric_data_t){.i = metricIncArray[i]});
+    }
 }
 
 
@@ -1267,7 +1275,7 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
     return ALREADY_DISABLED;
 }
 
-static WPTriggerActionType TemporalReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt){
+static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt){
     if(!wt->pc) {
         // if the ip is 0, let's retain the WP
         return RETAIN_WP;
@@ -1275,29 +1283,31 @@ static WPTriggerActionType TemporalReuseWPCallback(WatchPointInfo_t *wpi, int st
     // Report a reuse
     double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
     uint64_t numDiffSamples = GetWeightedMetricDiffAndReset(wpi->sample.node, wpi->sample.sampledMetricId, myProportion);
+    uint64_t inc = numDiffSamples;
     int joinNodeIdx = wpi->sample.isSamplePointAccurate? E_ACCURATE_JOIN_NODE_IDX : E_INACCURATE_JOIN_NODE_IDX;
 
-    // Now increment temporal_metric_id by numDiffSamples * overlapBytes
-    uint64_t inc = numDiffSamples;
-    reuse += inc;
-    UpdateConcatenatedPathPair(wt->ctxt, wpi->sample.node /* oldNode*/, joinNodes[E_TEPORALLY_REUSED][joinNodeIdx] /* joinNode*/, temporal_metric_id /* checkedMetric */, inc);
-    return ALREADY_DISABLED;
-}
+    uint64_t time_distance = rdtsc() - wpi->startTime;
+    uint64_t cacheline_distance; // readcounter - wpi->sample.cacheMissCount //TODO:jqswang
 
-static WPTriggerActionType SpatialReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt){
-    if(!wt->pc) {
-        // if the ip is 0, drop the WP
-        return ALREADY_DISABLED;
-    }
-    // Report a reuse
-    double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
-    uint64_t numDiffSamples = GetWeightedMetricDiffAndReset(wpi->sample.node, wpi->sample.sampledMetricId, myProportion);
-    int joinNodeIdx = wpi->sample.isSamplePointAccurate? E_ACCURATE_JOIN_NODE_IDX : E_INACCURATE_JOIN_NODE_IDX;
-    // Now increment dead_metric_id by numDiffSamples * overlapBytes
-    uint64_t inc = numDiffSamples;
-    reuse += inc;
+    //prepare the metric updating arrays
+    int metricIdArray[4];
+    uint64_t metricIncArray[4];
     
-    UpdateConcatenatedPathPair(wt->ctxt, wpi->sample.node /* oldNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, spatial_metric_id /* checkedMetric */, inc);
+    metricIncArray[0]=inc;
+    metricIdArray[1]=reuse_time_distance_metric_id; metricIncArray[1]=time_distance;
+    metricIdArray[2]=reuse_cacheline_distance_metric_id; metricIncArray[2]=cacheline_distance;
+    metricIdArray[3]=reuse_trapped_metric_id; metricIncArray[3]=1;
+
+    if (wpi->sample.reuseType == REUSE_TEMPORAL){
+        reuseTemporal += inc;
+        metricIdArray[0] = temporal_reuse_metric_id;
+        UpdateConcatenatedPathPairMultiple(wt->ctxt, wpi->sample.node /* oldNode*/, joinNodes[E_TEPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
+    }
+    else {
+        reuseSpatial += inc;
+        metricIdArray[0] = spatial_reuse_metric_id;
+        UpdateConcatenatedPathPairMultiple(wt->ctxt, wpi->sample.node /* oldNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
+    }
     return ALREADY_DISABLED;
 }
 
@@ -2130,8 +2140,8 @@ bool PrintStats(){
 #endif
 
 bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, int sampledMetricId) {
-    void * data_addr = mmap_data->addr;
-    void * precisePC = (mmap_data->header_misc & PERF_RECORD_MISC_EXACT_IP) ? mmap_data->ip : 0;
+    void * data_addr = (void *)mmap_data->addr;
+    void * precisePC = (void *)((mmap_data->header_misc & PERF_RECORD_MISC_EXACT_IP) ? mmap_data->ip : 0);
     // Filert out address and PC (0 or kernel address will not pass)
     if (!IsValidAddress(data_addr, precisePC)) {
         goto ErrExit; // incorrect access type
@@ -2252,7 +2262,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             }
         }
             break;
-        case WP_SPATIAL_REUSE:{
+        case WP_REUSE:{
             long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
             accessedIns += metricThreshold;
             
@@ -2260,7 +2270,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 .node = node,
                 .type=WP_RW,
                 .accessType=accessType,
-                .wpLength = accessLen,
+                //.wpLength = accessLen, // set later
                 .accessLength= accessLen,
                 .sampledMetricId=sampledMetricId,
                 .isSamplePointAccurate = isSamplePointAccurate,
@@ -2268,42 +2278,48 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 .isBackTrace = false
             };
             sd.wpLength = GetFloorWPLength(accessLen);
-            // randomly protect another word in the same cache line
-            uint64_t aligned_pc = ALIGN_TO_CACHE_LINE((uint64_t)data_addr);
-            if ((rdtsc() & 1) == 0)
-                sd.va = (void*) (aligned_pc - CACHE_LINE_SZ);
-            else
-                sd.va = (void *) (aligned_pc + CACHE_LINE_SZ);
+            if (rdtsc() & 1) { // 50% chance to detect spatial reuse
+                int wpSizes[] = {8, 4, 2, 1};
+                FalseSharingLocs falseSharingLocs[CACHE_LINE_SZ];
+                int numFSLocs = 0;
+                GetAllFalseSharingLocations((size_t)data_addr, accessLen, ALIGN_TO_CACHE_LINE((size_t)(data_addr)), CACHE_LINE_SZ, wpSizes, 0 /*curWPSizeIdx*/ , 4 /*totalWPSizes*/, falseSharingLocs, &numFSLocs);
+                assert(numFSLocs > 0); // at least there is one location to monitor
+                int idx = rdtsc() % numFSLocs; //randomly choose one location to monitor
+                sd.va = (void *)falseSharingLocs[idx].va;
+                sd.reuseType = REUSE_SPATIAL;
 #if 0
-            int offset = ((uint64_t)data_addr - aligned_pc) / accessLen;
-            int bound = CACHE_LINE_SZ / accessLen;
-            int r = rdtsc() % bound;
-            if (r == offset) r = (r+1) % bound;
-            sd.va = aligned_pc + (r * accessLen);
+                // jqswang: I am not sure what the following code does
+                // randomly protect another word in the same cache line
+                uint64_t aligned_pc = ALIGN_TO_CACHE_LINE((uint64_t)data_addr);
+                if ((rdtsc() & 1) == 0)
+                    sd.va = (void*) (aligned_pc - CACHE_LINE_SZ);
+                else
+                    sd.va = (void *) (aligned_pc + CACHE_LINE_SZ);
 #endif
+#if 0
+                int offset = ((uint64_t)data_addr - aligned_pc) / accessLen;
+                int bound = CACHE_LINE_SZ / accessLen;
+                int r = rdtsc() % bound;
+                if (r == offset) r = (r+1) % bound;
+                sd.va = aligned_pc + (r * accessLen);
+#endif
+            }
+            else { // 50% chance to detect the temporal reuse
+                sd.va = data_addr;
+                sd.reuseType = REUSE_TEMPORAL; 
+            }
             if (!IsValidAddress(sd.va, precisePC)) {
                 goto ErrExit; // incorrect access type
             }
-            SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
-        }
-            break;
-        case WP_TEMPORAL_REUSE:{
-            long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
-            accessedIns += metricThreshold;
-            
-            SampleData_t sd= {
-                .va = data_addr,
-                .node = node,
-                .type=WP_RW,
-                .accessType=accessType,
-                .wpLength = accessLen,
-                .accessLength= accessLen,
-                .sampledMetricId=sampledMetricId,
-                .isSamplePointAccurate = isSamplePointAccurate,
-                .preWPAction=theWPConfig->preWPAction,
-                .isBackTrace = false
-            };
-            sd.wpLength = GetFloorWPLength(accessLen);
+            //make sure the following variables have been set
+            //assert(cache_miss_event_set >= 0);
+            //assert(cache_miss_event_seq >= 0);
+
+            // Read the cache miss counter
+            long long cacheMissCount;
+            //TODO: jqswang assert(ReadEventCounter(cache_miss_event_set /* for PAPI */, cache_miss_event_seq, &cacheMissCount) == PAPI_OK);
+            sd.cachelineReuseDistance = cacheMissCount;
+            // register the watchpoint
             SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
         }
             break;
