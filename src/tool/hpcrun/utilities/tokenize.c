@@ -113,7 +113,8 @@ hpcrun_extract_threshold(const char *in, long *th, long def)
     pos = 1;
   }
   long num = strtol(in + pos, (char **)NULL, 10);
-  *th = (num == 0 ? def : num);
+  *th = num; // if the default threshold is 0, just leave it be
+  //*th = (num == 0 ? def : num);
 
   if (is_period)
     return 2;
