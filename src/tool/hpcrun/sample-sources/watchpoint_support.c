@@ -355,19 +355,11 @@ void IPCAllSharingWPConfigOverride(void *v){
 }
 
 
-void TemporalReuseWPConfigOverride(void *v){
+void ReuseWPConfigOverride(void *v){
     // dont fix IP
     wpConfig.dontFixIP = true;
     wpConfig.dontDisassembleWPAddress = true;
 }
-
-void SpatialReuseWPConfigOverride(void *v){
-    // dont fix IP
-    wpConfig.dontFixIP = true;
-    wpConfig.dontDisassembleWPAddress = true;
-}
-
-
 
 static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, bool modify) {
     // Perf event settings
