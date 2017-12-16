@@ -406,10 +406,48 @@ parse_buffer(int sample_type, event_thread_t *current, perf_mmap_data_t *mmap_in
 	return data_read;
 }
 
+
+#if defined(__x86_64__) || defined(__i386__)
+
+#ifdef __x86_64__
+#define DECLARE_ARGS(val, low, high)	unsigned low, high
+#define EAX_EDX_VAL(val, low, high)	((low) | ((uint64_t )(high) << 32))
+#define EAX_EDX_ARGS(val, low, high)	"a" (low), "d" (high)
+#define EAX_EDX_RET(val, low, high)	"=a" (low), "=d" (high)
+#else
+#define DECLARE_ARGS(val, low, high)	unsigned long long val
+#define EAX_EDX_VAL(val, low, high)	(val)
+#define EAX_EDX_ARGS(val, low, high)	"A" (val)
+#define EAX_EDX_RET(val, low, high)	"=A" (val)
+#endif
+
+#define barrier() __asm__ __volatile__("": : :"memory")
+
+static inline int rdpmc(pe_mmap_t *mmap, uint64_t *value)
+{
+  int counter = mmap->index - 1;
+  DECLARE_ARGS(val, low, high);
+
+  if (counter < 0) return -1;
+
+  asm volatile("rdpmc" : EAX_EDX_RET(val, low, high) : "c" (counter));
+  *value = EAX_EDX_VAL(val, low, high);
+  return 0;
+}
+#else
+#error("rdpmc() is not defined");
+#endif
+
 //----------------------------------------------------------------------
 // Public Interfaces
 //----------------------------------------------------------------------
 
+// read the counter value of the event
+int read_event_counter(event_thread_t *current,uint64_t *val){
+  pe_mmap_t *current_perf_mmap = current->mmap;
+  assert(rdpmc(current_perf_mmap, val));
+  return 0;
+}
 
 //----------------------------------------------------------
 // reading mmap buffer from the kernel
