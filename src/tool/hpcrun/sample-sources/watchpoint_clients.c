@@ -158,6 +158,9 @@ int true_ww_metric_id = -1;
 int true_rw_metric_id = -1;
 int true_wr_metric_id = -1;
 
+extern int reuse_cacheline_distance_event_index;
+extern int linux_perf_sample_source_index;
+
 
 #define NUM_WATERMARK_METRICS (4)
 int curWatermarkId = 0;
@@ -1287,8 +1290,16 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     int joinNodeIdx = wpi->sample.isSamplePointAccurate? E_ACCURATE_JOIN_NODE_IDX : E_INACCURATE_JOIN_NODE_IDX;
 
     uint64_t time_distance = rdtsc() - wpi->startTime;
-    uint64_t cacheline_distance; // readcounter - wpi->sample.cacheMissCount //TODO:jqswang
-
+    uint64_t cacheline_distance;
+    event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
+    read_event_counter(&(event_thread[reuse_cacheline_distance_event_index]), &cacheline_distance);
+    if (cacheline_distance < wpi->sample.cachelineReuseDistance){
+        fprintf(stderr, "HPCRUN: cacheline counter value decreased, previous %lx --> current %lx\n", wpi->sample.cachelineReuseDistance, cacheline_distance);
+        cacheline_distance = 0; // maybe set it to zero ??
+    }
+    else {
+        cacheline_distance -= wpi->sample.cachelineReuseDistance;
+    }
     //prepare the metric updating arrays
     int metricIdArray[4];
     uint64_t metricIncArray[4];
@@ -2312,13 +2323,14 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 goto ErrExit; // incorrect access type
             }
             //make sure the following variables have been set
-            //assert(cache_miss_event_set >= 0);
-            //assert(cache_miss_event_seq >= 0);
+            assert(linux_perf_sample_source_index >= 0);
+            assert(reuse_cacheline_distance_event_index >= 0);
 
-            // Read the cache miss counter
-            long long cacheMissCount;
-            //TODO: jqswang assert(ReadEventCounter(cache_miss_event_set /* for PAPI */, cache_miss_event_seq, &cacheMissCount) == PAPI_OK);
-            sd.cachelineReuseDistance = cacheMissCount;
+            // Read the cacheline event counter
+            uint64_t cachelineCount;
+            event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
+            read_event_counter(&(event_thread[reuse_cacheline_distance_event_index]), &cachelineCount);
+            sd.cachelineReuseDistance = cachelineCount;
             // register the watchpoint
             SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
         }

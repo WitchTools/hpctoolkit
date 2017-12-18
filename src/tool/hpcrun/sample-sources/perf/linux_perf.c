@@ -207,6 +207,7 @@ static const char *event_name = "CPU_CYCLES";
 //******************************************************************************
 
 int reuse_cacheline_distance_event_index = -1;
+int linux_perf_sample_source_index = -1;
 
 //******************************************************************************
 // local variables
@@ -765,7 +766,7 @@ METHOD_FN(process_event_list, int lush_metrics)
   //  automatically. But in practice, it didn't. Not sure why.
 
   for (event = start_tok(evlist); more_tok(); event = next_tok(), num_events++);
-
+  
   self->evl.nevents = num_events;
   
   // setup all requested events
@@ -796,7 +797,7 @@ METHOD_FN(process_event_list, int lush_metrics)
 
     int period_type = hpcrun_extract_ev_thresh(event, sizeof(name), name, &threshold,
         default_threshold.threshold_num);
-    //printf("period_type %d\n", period_type);printf("threshold %ld, %ld\n", threshold, default_threshold.threshold_num); //jqswang
+
     // ------------------------------------------------------------
     // need a special case if we have our own customized  predefined  event
     // This "customized" event will use one or more perf events
@@ -837,6 +838,13 @@ METHOD_FN(process_event_list, int lush_metrics)
                                    // since the OS will free it, we don't have to do it in hpcrun
     // set the metric for this perf event
     event_desc[i].metric = hpcrun_new_metric();
+
+    /******** For witch client WP_REUSE ***************/
+    if (threshold == 0){
+      reuse_cacheline_distance_event_index = i;
+      linux_perf_sample_source_index = self->sel_idx;
+    }
+    /**************************************************/
    
     // ------------------------------------------------------------
     // if we use frequency (event_type=1) then the period is not deterministic,

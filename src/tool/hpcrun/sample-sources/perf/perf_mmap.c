@@ -426,6 +426,7 @@ parse_buffer(int sample_type, event_thread_t *current, perf_mmap_data_t *mmap_in
 static inline int rdpmc(pe_mmap_t *mmap, uint64_t *value)
 {
   int counter = mmap->index - 1;
+  //fprintf(stderr,"counter = %d\n", counter);
   DECLARE_ARGS(val, low, high);
 
   if (counter < 0) return -1;
@@ -438,6 +439,27 @@ static inline int rdpmc(pe_mmap_t *mmap, uint64_t *value)
 #error("rdpmc() is not defined");
 #endif
 
+/*
+ * values[0] = raw count
+ * values[1] = TIME_ENABLED
+ * values[2] = TIME_RUNNING
+ */
+static inline uint64_t perf_scale(uint64_t *values) {
+  uint64_t res = 0;
+
+  if (!values[2] && !values[1] && values[0]) {
+    fprintf(stderr,"WARNING: time_running = 0 = time_enabled, raw count not zero\n");
+  }
+  if (values[2] > values[1]) {
+    fprintf(stderr, "WARNING: time_running > time_enabled\n");
+  }
+  if (values[2]) {
+    res = (uint64_t)((double)values[0] * values[1]/values[2]);
+  }
+  return res;
+}
+
+
 //----------------------------------------------------------------------
 // Public Interfaces
 //----------------------------------------------------------------------
@@ -445,7 +467,22 @@ static inline int rdpmc(pe_mmap_t *mmap, uint64_t *value)
 // read the counter value of the event
 int read_event_counter(event_thread_t *current,uint64_t *val){
   pe_mmap_t *current_perf_mmap = current->mmap;
-  assert(rdpmc(current_perf_mmap, val));
+  //rdpmc(current_perf_mmap, val); //something wrong when using rdpmc
+
+  uint64_t values[3];
+  if (current->fd < 0){
+    EMSG("Error: unable to open the event %d file descriptor", current->event->id);
+    return -1;
+  }
+  int ret = read(current->fd, values, sizeof(values));
+  if (ret < sizeof(values)) {
+    EMSG("Error: unable to read event %d", current->event->id);
+    return -1;
+  }
+
+  *val = perf_scale(values);
+  
+  //fprintf(stderr, "val = %lx\n", *val);
   return 0;
 }
 

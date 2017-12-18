@@ -378,6 +378,12 @@ perf_attr_init(
   attr->freq   = (usePeriod ? 0 : 1);
 
   attr->sample_period = threshold;          /* Period or frequency of sampling     */
+ 
+  //jqswang
+  if (threshold == 0){
+    attr->read_format = PERF_FORMAT_TOTAL_TIME_ENABLED|PERF_FORMAT_TOTAL_TIME_RUNNING;
+  }
+
   int max_sample_rate = perf_max_sample_rate();
 
   if (attr->freq == 1 && threshold > max_sample_rate) {
