@@ -480,7 +480,11 @@ int read_event_counter(event_thread_t *current,uint64_t *val){
     return -1;
   }
 
-  *val = perf_scale(values);
+  *val = values[0]; //*val = perf_scale(values);
+  //TODO:  If recording cache misses, the scaled value may be smaller than the previous reading (the counter should always increment if not reset).
+  // While time_enabled is always increasing, the counter of value and time_runing always increase together.
+  // We need to check whether we need to scale the value. If yes, how?
+  //fprintf(stderr, "values[0] = %lx, values[1] = %lx, values[2] = %lx\n", values[0],values[1], values[2);
   
   //fprintf(stderr, "val = %lx\n", *val);
   return 0;
