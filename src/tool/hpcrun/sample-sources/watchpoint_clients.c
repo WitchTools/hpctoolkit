@@ -914,7 +914,7 @@ enum JoinNodeType {
     E_KILLED=0,
     E_USED,
     E_NEW_VAL,
-    E_TEPORALLY_REUSED,
+    E_TEMPORALLY_REUSED,
     E_SPATIALLY_REUSED,
     E_TRUE_WW_SHARE,
     E_TRUE_WR_SHARE,
@@ -945,8 +945,8 @@ static void USED_BY_INACCURATE_PC(void) {}
 static void NEW_VAL_BY(void) {}
 static void NEW_VAL_BY_INACCURATE_PC(void) {}
 
-static void TEPORALLY_REUSED_BY(void) {}
-static void TEPORALLY_REUSED_BY_INACCURATE_PC(void) {}
+static void TEMPORALLY_REUSED_BY(void) {}
+static void TEMPORALLY_REUSED_BY_INACCURATE_PC(void) {}
 
 static void SPATIALLY_REUSED_BY(void) {}
 static void SPATIALLY_REUSED_BY_INACCURATE_PC(void) {}
@@ -994,7 +994,7 @@ static const void * joinNodes[][2] = {
     [E_KILLED] = GET_FUN_ADDR(KILLED_BY),
     [E_USED] = GET_FUN_ADDR(USED_BY),
     [E_NEW_VAL] = GET_FUN_ADDR(NEW_VAL_BY),
-    [E_TEPORALLY_REUSED] = GET_FUN_ADDR(TEPORALLY_REUSED_BY),
+    [E_TEMPORALLY_REUSED] = GET_FUN_ADDR(TEMPORALLY_REUSED_BY),
     [E_SPATIALLY_REUSED] = GET_FUN_ADDR(SPATIALLY_REUSED_BY),
     [E_TRUE_WW_SHARE] = GET_FUN_ADDR(TRUE_WW_SHARE),
     [E_TRUE_WR_SHARE] = GET_FUN_ADDR(TRUE_WR_SHARE),
@@ -1335,7 +1335,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     if (wpi->sample.reuseType == REUSE_TEMPORAL){
         reuseTemporal += inc;
         metricIdArray[0] = temporal_reuse_metric_id;
-        UpdateConcatenatedPathPairMultiple(wt->ctxt,wt->pc, wpi->sample.node /* oldNode*/, joinNodes[E_TEPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
+        UpdateConcatenatedPathPairMultiple(wt->ctxt,wt->pc, wpi->sample.node /* oldNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
     else {
         reuseSpatial += inc;
