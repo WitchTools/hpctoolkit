@@ -833,7 +833,6 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
                     EMSG("Failed to ReadMampBuffer: %s\n", strerror(errno));
                     monitor_real_abort();
                 }
-                
                 if(! (hdr.misc & PERF_RECORD_MISC_EXACT_IP)){
                     //EMSG("PERF_SAMPLE_IP imprecise\n");
                     tData.numWatchpointImpreciseIP ++;
@@ -847,7 +846,8 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
                         reliableIP = patchedIP;
                     } else {
                         // Fake as requested by Xu for reuse clients
-                        reliableIP = contextIP-1;
+			//reliableIP = contextIP-1;
+                        reliableIP = 0; //To avoid ambiguity, just ignore the inaccurate PC for the moment for reuse client. TODO: Can we still use the inaccurate pc?
                     }
                     //EMSG("PERF_SAMPLE_IP imprecise: %p patched to %p in WP handler\n", tmpIP, patchedIP);
                 } else {

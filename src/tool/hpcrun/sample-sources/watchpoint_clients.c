@@ -1065,14 +1065,36 @@ static inline void UpdateConcatenatedPathPair(void *ctxt, cct_node_t * oldNode, 
     // update the foundMetric
     cct_metric_data_increment(metricId, node, (cct_metric_data_t){.i = metricInc});
 }
-static inline void UpdateConcatenatedPathPairMultiple(void *ctxt, cct_node_t * oldNode, const void * joinNode, int *metricIdArray, uint64_t *metricIncArray, uint32_t numMetric){
+static inline void UpdateConcatenatedPathPairMultiple(void *ctxt, void *precise_pc, cct_node_t * oldNode, const void * joinNode, int *metricIdArray, uint64_t *metricIncArray, uint32_t numMetric){
+    // Currently, we assume precise_pc + 1 = context_pc (+1 means one instruction)
     if (numMetric == 0) return;
+
     // unwind call stack once
-    sample_val_t v = hpcrun_sample_callpath(ctxt, metricIdArray[0], SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
+    sample_val_t v = hpcrun_sample_callpath(ctxt, metricIdArray[0], SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);    
+    cct_node_t *new_node = v.sample_node;
+    if (precise_pc !=0){
+        cct_node_t *tmp_node = hpcrun_cct_parent(new_node);
+        assert(tmp_node);
+        if (is_same_function(hpcrun_context_pc(ctxt), precise_pc) == SAME_FN){
+            tmp_node = hpcrun_insert_special_node(tmp_node, precise_pc-1); // in hpcrun_insert_special_node(), the ip is added by 1. We want to cancel it here.
+            new_node = tmp_node;
+            cct_addr_t *addr = hpcrun_cct_addr(tmp_node);
+        }
+        else { // if they are not within the same function. Set the node to the calling site.
+            cct_addr_t * addr = hpcrun_cct_addr(tmp_node);
+            if (addr->ip_norm.lm_ip - (unsigned long)precise_pc <= 15){
+                tmp_node = hpcrun_cct_parent(tmp_node);
+                assert(tmp_node);
+                tmp_node = hpcrun_insert_special_node(tmp_node, precise_pc-1);
+                new_node = tmp_node;
+            }
+        }
+    }
+
     // insert a special node
     cct_node_t *node = hpcrun_insert_special_node(oldNode, joinNode);
     // concatenate call paths
-    node = hpcrun_cct_insert_path_return_leaf(v.sample_node, node);
+    node = hpcrun_cct_insert_path_return_leaf(new_node, node);
     for(uint32_t i = 0; i < numMetric; i++){
         // update the foundMetric
         cct_metric_data_increment(metricIdArray[i], node, (cct_metric_data_t){.i = metricIncArray[i]});
@@ -1281,7 +1303,8 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
 static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt){
     if(!wt->pc) {
         // if the ip is 0, let's retain the WP
-        return RETAIN_WP;
+        //return RETAIN_WP;
+        return ALREADY_DISABLED;
     }
     // Report a reuse
     double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
@@ -1312,12 +1335,12 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     if (wpi->sample.reuseType == REUSE_TEMPORAL){
         reuseTemporal += inc;
         metricIdArray[0] = temporal_reuse_metric_id;
-        UpdateConcatenatedPathPairMultiple(wt->ctxt, wpi->sample.node /* oldNode*/, joinNodes[E_TEPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
+        UpdateConcatenatedPathPairMultiple(wt->ctxt,wt->pc, wpi->sample.node /* oldNode*/, joinNodes[E_TEPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
     else {
         reuseSpatial += inc;
         metricIdArray[0] = spatial_reuse_metric_id;
-        UpdateConcatenatedPathPairMultiple(wt->ctxt, wpi->sample.node /* oldNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
+        UpdateConcatenatedPathPairMultiple(wt->ctxt, wt->pc, wpi->sample.node /* oldNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
     return ALREADY_DISABLED;
 }
@@ -2286,7 +2309,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 .sampledMetricId=sampledMetricId,
                 .isSamplePointAccurate = isSamplePointAccurate,
                 .preWPAction=theWPConfig->preWPAction,
-                .isBackTrace = false
+                .isBackTrace = false,
             };
             sd.wpLength = GetFloorWPLength(accessLen);
             if (rdtsc() & 1) { // 50% chance to detect spatial reuse
@@ -2325,6 +2348,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             //make sure the following variables have been set
             assert(linux_perf_sample_source_index >= 0);
             assert(reuse_cacheline_distance_event_index >= 0);
+
 
             // Read the cacheline event counter
             uint64_t cachelineCount;
