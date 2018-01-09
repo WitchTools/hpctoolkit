@@ -943,11 +943,11 @@ static void USED_BY_INACCURATE_PC(void) {}
 static void NEW_VAL_BY(void) {}
 static void NEW_VAL_BY_INACCURATE_PC(void) {}
 
-static void TEMPORALLY_REUSED_BY(void) {}
-static void TEMPORALLY_REUSED_BY_INACCURATE_PC(void) {}
+static void TEMPORALLY_REUSED_FROM(void) {}
+static void TEMPORALLY_REUSED_FROM_INACCURATE_PC(void) {}
 
-static void SPATIALLY_REUSED_BY(void) {}
-static void SPATIALLY_REUSED_BY_INACCURATE_PC(void) {}
+static void SPATIALLY_REUSED_FROM(void) {}
+static void SPATIALLY_REUSED_FROM_INACCURATE_PC(void) {}
 
 static void TRUE_WW_SHARE(void) {}
 static void TRUE_WW_SHARE_INACCURATE_PC(void) {}
@@ -992,8 +992,8 @@ static const void * joinNodes[][2] = {
     [E_KILLED] = GET_FUN_ADDR(KILLED_BY),
     [E_USED] = GET_FUN_ADDR(USED_BY),
     [E_NEW_VAL] = GET_FUN_ADDR(NEW_VAL_BY),
-    [E_TEMPORALLY_REUSED] = GET_FUN_ADDR(TEMPORALLY_REUSED_BY),
-    [E_SPATIALLY_REUSED] = GET_FUN_ADDR(SPATIALLY_REUSED_BY),
+    [E_TEMPORALLY_REUSED] = GET_FUN_ADDR(TEMPORALLY_REUSED_FROM),
+    [E_SPATIALLY_REUSED] = GET_FUN_ADDR(SPATIALLY_REUSED_FROM),
     [E_TRUE_WW_SHARE] = GET_FUN_ADDR(TRUE_WW_SHARE),
     [E_TRUE_WR_SHARE] = GET_FUN_ADDR(TRUE_WR_SHARE),
     [E_TRUE_RW_SHARE] = GET_FUN_ADDR(TRUE_RW_SHARE),
@@ -1063,36 +1063,42 @@ static inline void UpdateConcatenatedPathPair(void *ctxt, cct_node_t * oldNode, 
     // update the foundMetric
     cct_metric_data_increment(metricId, node, (cct_metric_data_t){.i = metricInc});
 }
-static inline void UpdateConcatenatedPathPairMultiple(void *ctxt, void *precise_pc, cct_node_t * oldNode, const void * joinNode, int *metricIdArray, uint64_t *metricIncArray, uint32_t numMetric){
-    // Currently, we assume precise_pc + 1 = context_pc (+1 means one instruction)
-    if (numMetric == 0) return;
+
+static inline cct_node_t *getPreciseNode(void *ctxt, void *precise_pc, int dummyMetricId){
+    // currently, we assume precise_pc + 1 = context_pc for PEBS (+1 means one instruction)
+    // we want the context to point to the exact IP
 
     // unwind call stack once
-    sample_val_t v = hpcrun_sample_callpath(ctxt, metricIdArray[0], SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);    
+    sample_val_t v = hpcrun_sample_callpath(ctxt, dummyMetricId, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     cct_node_t *new_node = v.sample_node;
-    if (precise_pc !=0){
-        cct_node_t *tmp_node = hpcrun_cct_parent(new_node);
-        assert(tmp_node);
-        if (is_same_function(hpcrun_context_pc(ctxt), precise_pc) == SAME_FN){
-            tmp_node = hpcrun_insert_special_node(tmp_node, precise_pc-1); // in hpcrun_insert_special_node(), the ip is added by 1. We want to cancel it here.
+    if (precise_pc == 0) return new_node;
+
+    cct_node_t *tmp_node = hpcrun_cct_parent(new_node);
+    assert(tmp_node);
+    if (is_same_function(hpcrun_context_pc(ctxt), precise_pc) == SAME_FN){
+        tmp_node = hpcrun_insert_special_node(tmp_node, precise_pc-1); // in hpcrun_insert_special_node(), the ip is added by 1. We want to cancel it here.
+        new_node = tmp_node;
+        cct_addr_t *addr = hpcrun_cct_addr(tmp_node);
+    }
+    else { // if they are not within the same function. Set the node to the calling site.
+        cct_addr_t * addr = hpcrun_cct_addr(tmp_node);
+        if (addr->ip_norm.lm_ip - (unsigned long)precise_pc <= 15){
+            tmp_node = hpcrun_cct_parent(tmp_node);
+            assert(tmp_node);
+            tmp_node = hpcrun_insert_special_node(tmp_node, precise_pc-1);
             new_node = tmp_node;
-            cct_addr_t *addr = hpcrun_cct_addr(tmp_node);
-        }
-        else { // if they are not within the same function. Set the node to the calling site.
-            cct_addr_t * addr = hpcrun_cct_addr(tmp_node);
-            if (addr->ip_norm.lm_ip - (unsigned long)precise_pc <= 15){
-                tmp_node = hpcrun_cct_parent(tmp_node);
-                assert(tmp_node);
-                tmp_node = hpcrun_insert_special_node(tmp_node, precise_pc-1);
-                new_node = tmp_node;
-            }
         }
     }
+    return new_node;
+}
+
+static inline void UpdateConcatenatedPathPairMultiple(cct_node_t *bottomNode, cct_node_t * topNode, const void * joinNode, int *metricIdArray, uint64_t *metricIncArray, uint32_t numMetric){
+    if (numMetric == 0) return;
 
     // insert a special node
-    cct_node_t *node = hpcrun_insert_special_node(oldNode, joinNode);
+    cct_node_t *node = hpcrun_insert_special_node(topNode, joinNode);
     // concatenate call paths
-    node = hpcrun_cct_insert_path_return_leaf(new_node, node);
+    node = hpcrun_cct_insert_path_return_leaf(bottomNode, node);
     for(uint32_t i = 0; i < numMetric; i++){
         // update the foundMetric
         cct_metric_data_increment(metricIdArray[i], node, (cct_metric_data_t){.i = metricIncArray[i]});
@@ -1300,7 +1306,7 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
 
 static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt){
     if(!wt->pc) {
-        // if the ip is 0, let's retain the WP
+        // if the ip is 0, let's drop the WP
         //return RETAIN_WP;
         return ALREADY_DISABLED;
     }
@@ -1333,12 +1339,14 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     if (wpi->sample.reuseType == REUSE_TEMPORAL){
         reuseTemporal += inc;
         metricIdArray[0] = temporal_reuse_metric_id;
-        UpdateConcatenatedPathPairMultiple(wt->ctxt,wt->pc, wpi->sample.node /* oldNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
+	cct_node_t *reuseNode =  getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
+        UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
     else {
         reuseSpatial += inc;
         metricIdArray[0] = spatial_reuse_metric_id;
-        UpdateConcatenatedPathPairMultiple(wt->ctxt, wt->pc, wpi->sample.node /* oldNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
+        cct_node_t *reuseNode =  getPreciseNode(wt->ctxt, wt->pc, spatial_reuse_metric_id );
+        UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
     return ALREADY_DISABLED;
 }
