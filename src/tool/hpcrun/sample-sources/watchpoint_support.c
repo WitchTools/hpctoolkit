@@ -31,7 +31,8 @@
 #include <math.h>
 #include <assert.h>
 #include <strings.h>
-
+#include <asm/prctl.h>
+#include <sys/prctl.h>
 
 #include "common.h"
 #include <hpcrun/main.h>
@@ -100,6 +101,8 @@ WPConfig_t wpConfig;
 typedef struct ThreadData{
     int lbrDummyFD __attribute__((aligned(CACHE_LINE_SZ)));
     stack_t ss;
+    void * fs_reg_val;
+    void * gs_reg_val;
     uint64_t samplePostFull;
     long numWatchpointTriggers;
     long numWatchpointImpreciseIP;
@@ -117,11 +120,23 @@ typedef struct ThreadData{
 static __thread ThreadData_t tData;
 
 bool IsAltStackAddress(void *addr){
-    if(addr >= tData.ss.ss_sp && addr < tData.ss.ss_sp + tData.ss.ss_size)
+    if((addr >= tData.ss.ss_sp) && (addr < tData.ss.ss_sp + tData.ss.ss_size))
         return true;
     return false;
 }
 
+bool IsFSorGS(void * addr) {
+    if (tData.fs_reg_val == (void *) -1) {
+        syscall(SYS_arch_prctl, ARCH_GET_FS, &tData.fs_reg_val);
+        syscall(SYS_arch_prctl, ARCH_GET_GS, &tData.gs_reg_val);
+    }
+    // 4096 smallest one page size
+    if ( (tData.fs_reg_val <= addr) && (addr < tData.fs_reg_val + 4096))
+	return true;
+    if ( (tData.gs_reg_val  <= addr) && (addr < tData.gs_reg_val  + 4096))
+	return true;
+    return false;
+}
 
 
 /********* OS SUPPORT ****************/
@@ -194,7 +209,7 @@ static void InitConfig(){
     CHECK(close(fd));
     
     
-#if defined(PERF_EVENT_IOC_UPDATE_BREAKPOINT)
+#if defined(PERF_EVENT_IOC_MODIFY_ATTRIBUTES)
     wpConfig.isWPModifyEnabled = true;
 #else
     wpConfig.isWPModifyEnabled = false;
@@ -394,13 +409,13 @@ static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, 
         default: pe.bp_type = HW_BREAKPOINT_W | HW_BREAKPOINT_R;
     }
     
-#if defined(PERF_EVENT_IOC_UPDATE_BREAKPOINT)
+#if defined(PERF_EVENT_IOC_MODIFY_ATTRIBUTES)
     if(modify) {
         // modification
         assert(wpi->fileHandle != -1);
         assert(wpi->mmapBuffer != 0);
         //DisableWatchpoint(wpi);
-        CHECK(ioctl(wpi->fileHandle, PERF_EVENT_IOC_UPDATE_BREAKPOINT, (unsigned long) (&pe)));
+        CHECK(ioctl(wpi->fileHandle, PERF_EVENT_IOC_MODIFY_ATTRIBUTES, (unsigned long) (&pe)));
         //if(wpi->isActive == false) {
         //EnableWatchpoint(wpi->fileHandle);
         //}
@@ -529,6 +544,8 @@ void WatchpointThreadInit(WatchPointUpCall_t func){
     
     tData.lbrDummyFD = -1;
     tData.fptr = func;
+    tData.fs_reg_val = (void*)-1;
+    tData.gs_reg_val = (void*)-1;
     srand48_r(time(NULL), &tData.randBuffer);
     tData.samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
     tData.numWatchpointTriggers = 0;
@@ -563,6 +580,8 @@ void WatchpointThreadTerminate(){
         CloseDummyHardwareEvent(tData.lbrDummyFD);
         tData.lbrDummyFD = -1;
     }
+    tData.fs_reg_val = (void*)-1;
+    tData.gs_reg_val = (void*)-1;
     
     hpcrun_stats_num_watchpoints_triggered_inc(tData.numWatchpointTriggers);
     hpcrun_stats_num_watchpoints_imprecise_inc(tData.numWatchpointImpreciseIP);
@@ -966,7 +985,7 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
     void* pc = hpcrun_context_pc(context);
     if (!hpcrun_safe_enter_async(pc)) return 0;
     
-    //    hpcrun_all_sources_stop();
+    linux_perf_events_pause();
     
     tData.numWatchpointTriggers++;
     //fprintf(stderr, " numWatchpointTriggers = %lu, \n", tData.numWatchpointTriggers);
@@ -984,7 +1003,8 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
     if(location == -1) {
         EMSG("\n WP trigger did not match any known active WP\n");
         //monitor_real_abort();
-        //hpcrun_safe_exit();
+        hpcrun_safe_exit();
+        linux_perf_events_resume();
         //fprintf("\n WP trigger did not match any known active WP\n");
         return 0;
     }
@@ -1054,6 +1074,7 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
             break;
     }
     //    hpcrun_all_sources_start();
+    linux_perf_events_resume();
     hpcrun_safe_exit();
     return 0;
 }

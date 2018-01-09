@@ -344,7 +344,9 @@ MY_BASE_FILES +=  			\
 	sample-sources/perf/event_custom.c	\
 	sample-sources/perf/linux_perf.c	\
 	sample-sources/perf/perf-util.c	\
-	sample-sources/perf/perf_mmap.c	
+	sample-sources/perf/perf_mmap.c	\
+	sample-sources/watchpoint_support.c \
+	sample-sources/watchpoint_clients.c
 endif
 
 if OPT_ENABLE_KERNEL_4_3
@@ -394,9 +396,7 @@ MY_AARCH64_FILES = \
 if OPT_PAPI_COMPONENT
 MY_PAPI_FILES = \
     sample-sources/papi-c.c \
-    sample-sources/papi-c-extended-info.c \
-    sample-sources/watchpoint_support.c \
-    sample-sources/watchpoint_clients.c
+    sample-sources/papi-c-extended-info.c
 else
 MY_PAPI_FILES = sample-sources/papi.c
 endif

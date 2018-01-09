@@ -55,7 +55,6 @@
 #include <alloca.h>
 #include <assert.h>
 #include <ctype.h>
-#include <papi.h>
 #include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,7 +79,6 @@
 #include "simple_oo.h"
 #include "sample_source_obj.h"
 #include "common.h"
-#include "papi-c-extended-info.h"
 
 #include <hpcrun/hpcrun_options.h>
 #include <hpcrun/hpcrun_stats.h>
@@ -1539,7 +1537,9 @@ static inline bool IsValidAddress(void * addr, void * pc){
         return false;
     if(IsAltStackAddress(addr))
         return false;
-    
+    if(IsFSorGS(addr))
+        return false;   
+ 
     if(IsBlackListedWatchpointAddress(addr) || IsBlackListedWatchpointAddress(pc)){
         return false;
     }

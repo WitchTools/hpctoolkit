@@ -170,10 +170,12 @@ perf_event_open(struct perf_event_attr *hw_event, pid_t pid,
 
 int
 perf_attr_init(
-  u64 event_code, u64 event_type,
   struct perf_event_attr *attr,
   bool usePeriod, u64 threshold,
   u64  sampletype
 );
+
+extern void linux_perf_events_pause();
+extern void linux_perf_events_resume();
 
 #endif
