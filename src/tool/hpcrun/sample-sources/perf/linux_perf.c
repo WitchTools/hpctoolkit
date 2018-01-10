@@ -474,7 +474,7 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     }
     hpcrun_clear_handling_sample(td);
 #endif
-    
+
   if(WatchpointClientActive()){
     OnSample(mmap_data,
              hpcrun_context_pc(context),
