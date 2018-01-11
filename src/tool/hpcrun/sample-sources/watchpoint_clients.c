@@ -816,6 +816,8 @@ METHOD_FN(process_event_list, int lush_metrics)
             hpcrun_set_metric_info_and_period(temporal_reuse_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
             spatial_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(spatial_reuse_metric_id, "SPATIAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            latency_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(latency_metric_id, "LATENCY", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_time_distance_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(reuse_time_distance_metric_id, "TIME_DISTANCE", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_cacheline_distance_metric_id = hpcrun_new_metric();
@@ -2307,7 +2309,10 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
         case WP_REUSE:{
             long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
             accessedIns += metricThreshold;
-            
+            if (accessType == LOAD) {
+                cct_metric_data_increment(latency_metric_id, node, (cct_metric_data_t){.i = mmap_data->weight});
+            }            
+
             SampleData_t sd= {
                 .node = node,
                 .type=WP_RW,
