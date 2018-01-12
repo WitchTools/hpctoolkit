@@ -528,6 +528,14 @@ static void ClientTermination(){
             hpcrun_stats_num_reuseTemporal_inc(reuseTemporal);
             hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseSpatial_inc(reuseSpatial);
+            // Set the period of LATENCY and event MEM_TRANS_RETIRED:LATENCY_ABOVE_THRESHOLD/LOAD_LATENCY the same
+            // NOTES: There exists a concurrency problem. But will it cause any problem?
+            for(int i=0; i < hpcrun_get_num_metrics(); i++){
+                if (strstr(hpcrun_id2metric(i)->name,"MEM_TRANS_RETIRED")){
+                    hpcrun_id2metric(latency_metric_id)->period = hpcrun_id2metric(i)->period;
+                    break;
+                }
+            }
             break;
         case WP_FALSE_SHARING:
         case WP_IPC_FALSE_SHARING:
