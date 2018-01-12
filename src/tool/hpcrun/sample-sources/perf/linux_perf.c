@@ -813,6 +813,13 @@ METHOD_FN(process_event_list, int lush_metrics)
     metric_desc_t *m = hpcrun_set_metric_info_and_period(event_desc[i].metric, name_dup,
             MetricFlags_ValFmt_Real, threshold, prop);
 
+    // add the latency metric if the event is MEM_TRANS_RETIRED:LATENCY_ABOVE_THRESHOLD or MEM_TRANS_RETIRED:LOAD_LATENCY
+    if (strstr(name, "MEM_TRANS_RETIRED")) {
+      extern int latency_metric_id;
+      latency_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_metric_id, "LATENCY", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+    }
+
     if (m == NULL) {
       EMSG("Error: unable to create metric #%d: %s", index, name);
     } else {

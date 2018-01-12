@@ -528,14 +528,6 @@ static void ClientTermination(){
             hpcrun_stats_num_reuseTemporal_inc(reuseTemporal);
             hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseSpatial_inc(reuseSpatial);
-            // Set the period of LATENCY and event MEM_TRANS_RETIRED:LATENCY_ABOVE_THRESHOLD/LOAD_LATENCY the same
-            // NOTES: There exists a concurrency problem. But will it cause any problem?
-            for(int i=0; i < hpcrun_get_num_metrics(); i++){
-                if (strstr(hpcrun_id2metric(i)->name,"MEM_TRANS_RETIRED")){
-                    hpcrun_id2metric(latency_metric_id)->period = hpcrun_id2metric(i)->period;
-                    break;
-                }
-            }
             break;
         case WP_FALSE_SHARING:
         case WP_IPC_FALSE_SHARING:
@@ -824,8 +816,6 @@ METHOD_FN(process_event_list, int lush_metrics)
             hpcrun_set_metric_info_and_period(temporal_reuse_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
             spatial_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(spatial_reuse_metric_id, "SPATIAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
-            latency_metric_id = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(latency_metric_id, "LATENCY", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_time_distance_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(reuse_time_distance_metric_id, "TIME_DISTANCE", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_cacheline_distance_metric_id = hpcrun_new_metric();
@@ -2320,7 +2310,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             const char *event_name = hpcrun_id2metric(sampledMetricId)->name;
             if ( strstr(event_name, "LATENCY_ABOVE_THRESHOLD") || strstr(event_name, "LOAD_LATENCY") ) {
                 cct_metric_data_increment(latency_metric_id, node, (cct_metric_data_t){.i = mmap_data->weight});
-            }            
+            }
 
             SampleData_t sd= {
                 .node = node,
