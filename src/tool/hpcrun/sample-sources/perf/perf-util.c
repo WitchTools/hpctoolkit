@@ -310,7 +310,7 @@ perf_attr_init(
                              | PERF_SAMPLE_PERIOD | PERF_SAMPLE_TIME 
                              | PERF_SAMPLE_IP     | PERF_SAMPLE_ADDR 
                              | PERF_SAMPLE_CPU    | PERF_SAMPLE_TID
-                             | PERF_SAMPLE_WEIGHT;
+                             | PERF_SAMPLE_WEIGHT | PERF_SAMPLE_DATA_SRC;
 
   attr->size   = sizeof(struct perf_event_attr); /* Size of attribute structure */
   attr->freq   = (usePeriod ? 0 : 1);

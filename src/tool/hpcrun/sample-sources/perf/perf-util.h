@@ -121,6 +121,19 @@ typedef struct perf_mmap_data_s {
 
 } perf_mmap_data_t;
 
+// data structure for the data_src field of perf_mmap_data_t
+typedef union perf_mmap_data_src_t {
+  uint64_t val;
+  struct {
+    uint64_t   mem_op:5,       /* type of opcode */
+    mem_lvl:14,     /* memory hierarchy level */
+    mem_snoop:5,    /* snoop mode */
+    mem_lock:2,     /* lock instr */
+    mem_dtlb:7,     /* tlb access */
+    mem_rsvd:31;
+  };
+} perf_mmap_data_src_t;
+
 
 // --------------------------------------------------------------
 // main data structure to store the information of an event.

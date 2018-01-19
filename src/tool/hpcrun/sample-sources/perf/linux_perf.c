@@ -449,11 +449,24 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     } else {
         td->precise_pc = 0;
     }
-    
-  *sv = hpcrun_sample_callpath(context, current->event->metric,
-        (hpcrun_metricVal_t) {.r=counter},
-        0/*skipInner*/, 0/*isSync*/, &info);
-
+  
+  if ( strstr(current->event->metric_desc->name, "LATENCY_ABOVE_THRESHOLD") || strstr(current->event->metric_desc->name, "LOAD_LATENCY") ) { 
+    perf_mmap_data_src_t data_src;
+    data_src.val = mmap_data->data_src;
+    if ( (data_src.mem_lvl & PERF_MEM_LVL_HIT) && (data_src.mem_lvl & PERF_MEM_LVL_L1)){ // L1 HIT, ignore
+      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t){.i=0}, 0/*skipInner*/, 0/*isSync*/, NULL);
+    }
+    else {
+      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t) {.r=counter}, 0/*skipInner*/, 0/*isSync*/, &info);
+      extern int latency_metric_id;
+      cct_metric_data_increment(latency_metric_id, sv->sample_node, (cct_metric_data_t){.i = mmap_data->weight});
+    }
+  }
+  else {
+    *sv = hpcrun_sample_callpath(context, current->event->metric,
+          (hpcrun_metricVal_t) {.r=counter},
+          0/*skipInner*/, 0/*isSync*/, &info);
+  }
   // no need to reset the precise_pc; hpcrun_sample_callpath does so
   // td->precise_pc = 0;
 

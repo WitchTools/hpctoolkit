@@ -2307,11 +2307,6 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
         case WP_REUSE:{
             long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
             accessedIns += metricThreshold;
-            const char *event_name = hpcrun_id2metric(sampledMetricId)->name;
-            if ( strstr(event_name, "LATENCY_ABOVE_THRESHOLD") || strstr(event_name, "LOAD_LATENCY") ) {
-                cct_metric_data_increment(latency_metric_id, node, (cct_metric_data_t){.i = mmap_data->weight});
-            }
-
             SampleData_t sd= {
                 .node = node,
                 .type=WP_RW,
