@@ -467,7 +467,8 @@ static inline uint64_t perf_scale(uint64_t *values) {
 //----------------------------------------------------------------------
 
 // read the counter value of the event
-int read_event_counter(event_thread_t *current,uint64_t *val){
+int read_event_counter(event_thread_t *current,uint64_t *val, int isScaled){
+  // isScaled: >=1 -> True, <=0 ->False
   pe_mmap_t *current_perf_mmap = current->mmap;
   //rdpmc(current_perf_mmap, val); //something wrong when using rdpmc
 
@@ -481,8 +482,12 @@ int read_event_counter(event_thread_t *current,uint64_t *val){
     EMSG("Error: unable to read event %d", current->event->id);
     return -1;
   }
-
-  *val = values[0]; //*val = perf_scale(values);
+  if (isScaled >= 1){
+    *val = perf_scale(values);
+  }
+  else {
+    *val = values[0];
+  }
   //TODO:  If recording cache misses, the scaled value may be smaller than the previous reading (the counter should always increment if not reset).
   // While time_enabled is always increasing, the counter of value and time_runing always increase together.
   // We need to check whether we need to scale the value. If yes, how?
@@ -491,7 +496,6 @@ int read_event_counter(event_thread_t *current,uint64_t *val){
   //fprintf(stderr, "val = %lx\n", *val);
   return 0;
 }
-
 //----------------------------------------------------------
 // reading mmap buffer from the kernel
 // in/out: mmapped data of type perf_mmap_data_t.

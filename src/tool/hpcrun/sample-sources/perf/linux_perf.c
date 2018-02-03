@@ -202,6 +202,8 @@ static const char *event_name = "CPU_CYCLES";
 // global variables
 //******************************************************************************
 
+int *linux_perf_reading_events = NULL;
+int linux_perf_num_reading_events = -1;
 int reuse_cacheline_distance_event_index = -1;
 int linux_perf_sample_source_index = -1;
 
@@ -487,12 +489,20 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     }
     hpcrun_clear_handling_sample(td);
 #endif
+    //event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
+    fprintf(stderr, "COUNTER:");
+    for (int i=0; i < linux_perf_num_reading_events; i++){
+        uint64_t tmp_counter;
+	linux_perf_read_event_counter(linux_perf_reading_events[i], &tmp_counter, 1 /* is scaled*/);
+        fprintf(stderr, " %lu", tmp_counter);
+    }
+    fprintf(stderr, "\n");
 
   if(WatchpointClientActive()){
-    OnSample(mmap_data,
-             hpcrun_context_pc(context),
-             sv->sample_node,
-             current->event->metric);
+    //OnSample(mmap_data,
+    //         hpcrun_context_pc(context),
+    //         sv->sample_node,
+    //         current->event->metric);
   }
   return sv;
 }
@@ -741,6 +751,8 @@ METHOD_FN(process_event_list, int lush_metrics)
 
   size_t size = sizeof(event_info_t) * num_events;
   event_desc = (event_info_t*) hpcrun_malloc(size);
+  linux_perf_reading_events = (int *) hpcrun_malloc(sizeof(int) * num_events);
+  linux_perf_num_reading_events = 0; 
   if (event_desc == NULL) {
 	  EMSG("Unable to allocate %d bytes", size);
 	  return;
@@ -809,6 +821,7 @@ METHOD_FN(process_event_list, int lush_metrics)
 
     /******** For witch client WP_REUSE ***************/
     if (threshold == 0){
+      linux_perf_reading_events[linux_perf_num_reading_events++] = i;
       reuse_cacheline_distance_event_index = i;
       linux_perf_sample_source_index = self->sel_idx;
     }
@@ -983,6 +996,13 @@ void linux_perf_events_resume(){
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
   int nevents = self->evl.nevents;
   perf_start_all(nevents, event_thread);
+}
+
+int linux_perf_read_event_counter(int event_index, uint64_t *val, int isScaled){ 
+  // isScaled: >=1 -> True, <=0 ->False
+  sample_source_t *self = &obj_name();
+  event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
+  return read_event_counter(&(event_thread[event_index]), val, isScaled);
 }
 
 // ---------------------------------------------

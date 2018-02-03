@@ -158,7 +158,8 @@ int true_wr_metric_id = -1;
 
 extern int reuse_cacheline_distance_event_index;
 extern int linux_perf_sample_source_index;
-
+extern int *linux_perf_reading_events;
+extern int linux_perf_num_reading_events;
 
 #define NUM_WATERMARK_METRICS (4)
 int curWatermarkId = 0;
@@ -1317,9 +1318,17 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     int joinNodeIdx = wpi->sample.isSamplePointAccurate? E_ACCURATE_JOIN_NODE_IDX : E_INACCURATE_JOIN_NODE_IDX;
 
     uint64_t time_distance = rdtsc() - wpi->startTime;
-    uint64_t cacheline_distance;
-    event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
-    read_event_counter(&(event_thread[reuse_cacheline_distance_event_index]), &cacheline_distance);
+    uint64_t cacheline_distance = 0;
+    //event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
+    //fprintf(stderr, "SECOND_COUNTER: 0x%lx,%lu", wt->pc, rdtsc());
+    for (int i=0; i < linux_perf_num_reading_events; i++){
+        uint64_t tmp_counter;
+        //read_event_counter(&(event_thread[ linux_perf_reading_events[i]]), &tmp_counter);
+	linux_perf_read_event_counter( linux_perf_reading_events[i], &tmp_counter);
+        //fprintf(stderr, " %lu", tmp_counter);
+        cacheline_distance += tmp_counter;
+    }
+    //fprintf(stderr, "\n");
     if (cacheline_distance < wpi->sample.cachelineReuseDistance){
         fprintf(stderr, "HPCRUN: cacheline counter value decreased, previous %lx --> current %lx\n", wpi->sample.cachelineReuseDistance, cacheline_distance);
         cacheline_distance = 0; // maybe set it to zero ??
@@ -1327,6 +1336,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     else {
         cacheline_distance -= wpi->sample.cachelineReuseDistance;
     }
+    fprintf(stderr, "REUSE_DISTANCE: %lu\n", cacheline_distance);
     //prepare the metric updating arrays
     int metricIdArray[4];
     uint64_t metricIncArray[4];
@@ -2359,11 +2369,19 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
 
             // Read the cacheline event counter
             uint64_t cachelineCount;
-            event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
-            read_event_counter(&(event_thread[reuse_cacheline_distance_event_index]), &cachelineCount);
-            sd.cachelineReuseDistance = cachelineCount;
+            //event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
+            sd.cachelineReuseDistance = 0;
+            fprintf(stderr, "FIRST_COUNTER: 0x%lx,%lu", precisePC, rdtsc());
+            for (int i=0; i < linux_perf_num_reading_events; i++){
+                //read_event_counter(&(event_thread[ linux_perf_reading_events[i]]), &cachelineCount);
+		linux_perf_read_event_counter(linux_perf_reading_events[i], &cachelineCount);
+                sd.cachelineReuseDistance += cachelineCount;
+                fprintf(stderr, " %lu", cachelineCount);
+            }
+            fprintf(stderr,"\n");
+
             // register the watchpoint
-            SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
+            //SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
         }
             break;
         case WP_FALSE_SHARING:
