@@ -62,7 +62,6 @@
 #include <linux/perf_event.h>
 #include <linux/version.h>
 
-
 /******************************************************************************
  * hpcrun includes
  *****************************************************************************/
@@ -441,24 +440,22 @@ static inline int rdpmc(pe_mmap_t *mmap, uint64_t *value)
 #error("rdpmc() is not defined");
 #endif
 
-/*
- * values[0] = raw count
- * values[1] = TIME_ENABLED
- * values[2] = TIME_RUNNING
- */
-static inline uint64_t perf_scale(uint64_t *values) {
-  uint64_t res = 0;
 
-  if (!values[2] && !values[1] && values[0]) {
+/*
+ * val[0] = raw count
+ * val[1] = TIME_ENABLED
+ * val[2] = TIME_RUNNING
+ */
+static inline int isCounterValid(uint64_t *val){
+  if (!val[2] && !val[1] && val[0]) {
     fprintf(stderr,"WARNING: time_running = 0 = time_enabled, raw count not zero\n");
+    return -1;
   }
-  if (values[2] > values[1]) {
+  if (val[2] > val[1]) {
     fprintf(stderr, "WARNING: time_running > time_enabled\n");
+    return -1;
   }
-  if (values[2]) {
-    res = (uint64_t)((double)values[0] * values[1]/values[2]);
-  }
-  return res;
+  return 1;
 }
 
 
@@ -467,35 +464,54 @@ static inline uint64_t perf_scale(uint64_t *values) {
 //----------------------------------------------------------------------
 
 // read the counter value of the event
-int read_event_counter(event_thread_t *current,uint64_t *val, int isScaled){
-  // isScaled: >=1 -> True, <=0 ->False
+// val is an array of uint64_t, at least has a length of 3
+int perf_read_event_counter(event_thread_t *current, uint64_t *val){
+
   pe_mmap_t *current_perf_mmap = current->mmap;
   //rdpmc(current_perf_mmap, val); //something wrong when using rdpmc
 
-  uint64_t values[3];
   if (current->fd < 0){
     EMSG("Error: unable to open the event %d file descriptor", current->event->id);
     return -1;
   }
-  int ret = read(current->fd, values, sizeof(values));
-  if (ret < sizeof(values)) {
+  int ret = read(current->fd, val, sizeof(uint64_t) * 3 );
+  if (ret < sizeof(uint64_t)*3) {
     EMSG("Error: unable to read event %d", current->event->id);
     return -1;
   }
-  if (isScaled >= 1){
-    *val = perf_scale(values);
-  }
-  else {
-    *val = values[0];
-  }
-  //TODO:  If recording cache misses, the scaled value may be smaller than the previous reading (the counter should always increment if not reset).
-  // While time_enabled is always increasing, the counter of value and time_runing always increase together.
-  // We need to check whether we need to scale the value. If yes, how?
-  //fprintf(stderr, "values[0] = %lx, values[1] = %lx, values[2] = %lx\n", values[0],values[1], values[2);
-  
-  //fprintf(stderr, "val = %lx\n", *val);
   return 0;
 }
+
+/*
+ * val[0] = raw count
+ * val[1] = TIME_ENABLED
+ * val[2] = TIME_RUNNING
+ */
+uint64_t perf_get_scaled_counter_val(uint64_t *val){
+   uint64_t res = 0;
+  isCounterValid(val);
+  if (val[2]) {
+    res = (uint64_t)((double)val[0] * val[1]/val[2] );
+  }
+  return res;
+}
+
+
+uint64_t perf_get_scaled_counter_delta(uint64_t *val, uint64_t *prev_val){
+  uint64_t res = 0;
+  isCounterValid(val);
+  isCounterValid(prev_val);
+
+  if (val[2] - prev_val[2]) {
+    res = (uint64_t)( 
+        ((double)val[0] - (double)prev_val[0]) * ( (double)val[1] - (double)prev_val[1])
+            / ((double) val[2] - (double)prev_val[2])
+      );
+   }
+   return res;
+}
+
+
 //----------------------------------------------------------
 // reading mmap buffer from the kernel
 // in/out: mmapped data of type perf_mmap_data_t.

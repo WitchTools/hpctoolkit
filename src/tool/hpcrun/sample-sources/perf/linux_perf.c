@@ -189,6 +189,21 @@ static int
 perf_event_handler( int sig, siginfo_t* siginfo, void* context);
 
 
+static inline uint64_t perf_scale(uint64_t *values) { //jqswang
+  uint64_t res = 0;
+
+  if (!values[2] && !values[1] && values[0]) {
+    fprintf(stderr,"WARNING: time_running = 0 = time_enabled, raw count not zero\n");
+  }
+  if (values[2] > values[1]) {
+    fprintf(stderr, "WARNING: time_running > time_enabled\n");
+  }
+  if (values[2]) {
+    res = (uint64_t)((double)values[0] * values[1]/values[2]);
+  }
+  return res;
+}
+
 //******************************************************************************
 // constants
 //******************************************************************************
@@ -489,7 +504,7 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     }
     hpcrun_clear_handling_sample(td);
 #endif
-    //event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
+#if 0 //for debugging
     fprintf(stderr, "COUNTER:");
     for (int i=0; i < linux_perf_num_reading_events; i++){
         uint64_t tmp_counter;
@@ -497,12 +512,34 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
         fprintf(stderr, " %lu", tmp_counter);
     }
     fprintf(stderr, "\n");
-
+#endif
   if(WatchpointClientActive()){
-    //OnSample(mmap_data,
-    //         hpcrun_context_pc(context),
-    //         sv->sample_node,
-    //         current->event->metric);
+    OnSample(mmap_data,
+             hpcrun_context_pc(context),
+             sv->sample_node,
+             current->event->metric);
+  }
+  else {
+#if 0
+    fprintf(stderr, "COUNTER:");
+    for (int i=0; i < linux_perf_num_reading_events; i++){
+        uint64_t tmp_counter;
+        linux_perf_read_event_counter(linux_perf_reading_events[i], &tmp_counter, 1 /* is scaled*/);
+        fprintf(stderr, " %lu", tmp_counter);
+    }
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "COUNTER:");
+    for (int i=0; i < linux_perf_num_reading_events; i++){
+        uint64_t val[3];
+        uint64_t scaled;
+        linux_perf_read_event_counter_full( linux_perf_reading_events[i], val);
+        scaled = perf_scale(val);
+        fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
+    }
+    fprintf(stderr, "\n");
+#endif
+
   }
   return sv;
 }
@@ -998,12 +1035,13 @@ void linux_perf_events_resume(){
   perf_start_all(nevents, event_thread);
 }
 
-int linux_perf_read_event_counter(int event_index, uint64_t *val, int isScaled){ 
-  // isScaled: >=1 -> True, <=0 ->False
+// val is a uint64_t array and has at least 3 elements
+int linux_perf_read_event_counter(int event_index, uint64_t *val){
   sample_source_t *self = &obj_name();
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
-  return read_event_counter(&(event_thread[event_index]), val, isScaled);
+  return perf_read_event_counter(&(event_thread[event_index]), val);
 }
+
 
 // ---------------------------------------------
 // signal handler
