@@ -1378,12 +1378,17 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         cacheline_distance -= wpi->sample.cachelineReuseDistance;
     }
 #endif
+#if 1
     if (cacheline_distance == 0){
      fprintf(stderr, "REUSE_DISTANCE (EST): %lu (rate %lf)\n", (uint64_t)( (val[1] - wpi->sample.cachelineReuseDistance[1]) * counting_rate), counting_rate);
+       //just drop it
     }
     else{
      fprintf(stderr, "REUSE_DISTANCE (ACC): %lu (rate %lf)\n", cacheline_distance,  ((double)val[0] - wpi->sample.cachelineReuseDistance[0] )/((double)val[2] - wpi->sample.cachelineReuseDistance[2]));
     }
+#endif
+    //fprintf(stderr, "REUSE_DISTANCE: %lu %lu\n", cacheline_distance, inc);
+
     //prepare the metric updating arrays
     int metricIdArray[4];
     uint64_t metricIncArray[4];
@@ -2376,7 +2381,8 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 .isBackTrace = false,
             };
             sd.wpLength = GetFloorWPLength(accessLen);
-            if (rdtsc() & 1) { // 50% chance to detect spatial reuse
+            //if (rdtsc() & 1) { // 50% chance to detect spatial reuse
+            if (0){ //jqswang: testing, always temporal reuse
                 int wpSizes[] = {8, 4, 2, 1};
                 FalseSharingLocs falseSharingLocs[CACHE_LINE_SZ];
                 int numFSLocs = 0;
