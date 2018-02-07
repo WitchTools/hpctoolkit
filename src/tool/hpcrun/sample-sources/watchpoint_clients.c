@@ -180,7 +180,7 @@ uint64_t old_values[3] = {0,0,0};
 double counting_rate = 0.0;
 static inline void update_counting_rate(uint64_t *values){ //jqswang
   if ( values[2] == old_values[2]){
-    fprintf(stderr, "HPCRUN: WARNING: the sampling rate is too high for the multiplexed events\n");
+    //fprintf(stderr, "HPCRUN: WARNING: the sampling rate is too high for the multiplexed events\n");
     return;
   }
   counting_rate = ((double)(values[0] - old_values[0])) / (values[2] - old_values[2]);
@@ -1348,27 +1348,18 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
 
     uint64_t time_distance = rdtsc() - wpi->startTime;
     uint64_t cacheline_distance = 0;
-#if 0
-    fprintf(stderr, "SECOND_COUNTER: 0x%lx,%lu", wt->pc, rdtsc());
-    for (int i=0; i < linux_perf_num_reading_events; i++){
-        uint64_t tmp_counter;
-	linux_perf_read_event_counter( linux_perf_reading_events[i], &tmp_counter, 0);
-        fprintf(stderr, " %lu", tmp_counter);
-        cacheline_distance += tmp_counter;
-    }
-    fprintf(stderr, "\n");
-#else
-    fprintf(stderr, "SECOND_COUNTER:");
+
+//    fprintf(stderr, "SECOND_COUNTER:");
             uint64_t val[3];
         uint64_t scaled;
     for (int i=0; i < linux_perf_num_reading_events; i++){
 	linux_perf_read_event_counter( linux_perf_reading_events[i], val);
 	scaled = perf_scale(val);
-	fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
+//	fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
 	cacheline_distance = perf_get_scaled_counter_delta(val, wpi->sample.cachelineReuseDistance);
     }
-    fprintf(stderr, "\n");
-#endif
+//    fprintf(stderr, "\n");
+
 #if 0
     if (cacheline_distance < wpi->sample.cachelineReuseDistance){
         fprintf(stderr, "HPCRUN: cacheline counter value decreased, previous %lu --> current %lu\n", wpi->sample.cachelineReuseDistance, cacheline_distance);
@@ -1378,7 +1369,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         cacheline_distance -= wpi->sample.cachelineReuseDistance;
     }
 #endif
-#if 1
+#if 0
     if (cacheline_distance == 0){
      fprintf(stderr, "REUSE_DISTANCE (EST): %lu (rate %lf)\n", (uint64_t)( (val[1] - wpi->sample.cachelineReuseDistance[1]) * counting_rate), counting_rate);
        //just drop it
@@ -1388,6 +1379,16 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     }
 #endif
     //fprintf(stderr, "REUSE_DISTANCE: %lu %lu\n", cacheline_distance, inc);
+
+    char marker = 'T'; // T: real data; "F": estimation from counting rate
+    if (cacheline_distance == 0){
+       cacheline_distance = (uint64_t)( (val[1] - wpi->sample.cachelineReuseDistance[1]) * counting_rate);
+       marker = 'F';
+    }
+
+    fprintf(stderr, "REUSE_DISTANCE: %c %lu %lu\n", marker, cacheline_distance, inc);
+
+
 
     //prepare the metric updating arrays
     int metricIdArray[4];
@@ -2434,17 +2435,17 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             }
             fprintf(stderr,"\n");
 #else
-    fprintf(stderr, "FIRST_COUNTER(rate %lf):", counting_rate);
+    //fprintf(stderr, "FIRST_COUNTER(rate %lf):", counting_rate);
     for (int i=0; i < linux_perf_num_reading_events; i++){
     	uint64_t val[3];
 	uint64_t scaled;
 	linux_perf_read_event_counter( linux_perf_reading_events[i], val);
 	update_counting_rate(val);
 	scaled = perf_scale(val);
-	fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
+	//fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
 	memcpy(sd.cachelineReuseDistance, val, sizeof(uint64_t)*3);;
     }
-    fprintf(stderr, "\n");
+    //fprintf(stderr, "\n");
     //sd.cachelineReuseDistance = cachelineCount;
 #endif
             // register the watchpoint
