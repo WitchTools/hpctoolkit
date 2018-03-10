@@ -103,7 +103,7 @@ typedef struct SampleData{
     bool isSamplePointAccurate;
     bool isBackTrace;
     ReuseType reuseType;
-    uint64_t cachelineReuseDistance[3];
+    uint64_t cachelineReuseDistance[2][3];
 } SampleData_t;
 
 typedef struct WatchPointInfo{

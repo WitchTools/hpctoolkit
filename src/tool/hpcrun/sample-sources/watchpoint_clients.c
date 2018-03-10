@@ -155,6 +155,11 @@ int false_wr_metric_id = -1;
 int true_ww_metric_id = -1;
 int true_rw_metric_id = -1;
 int true_wr_metric_id = -1;
+int my_iteration = 0;//jqswang
+void increment_iteration(){
+  my_iteration++;
+}
+
 
 extern int reuse_cacheline_distance_event_index;
 extern int linux_perf_sample_source_index;
@@ -554,11 +559,21 @@ static void ClientTermination(){
             hpcrun_stats_num_oldAppxBytes_inc(oldAppxBytes);
             break;
         case WP_REUSE:
+	{
+            uint64_t val[3];
+            fprintf(stderr, "FINAL_COUNTING:");
+    	for (int i=0; i < MIN(2,linux_perf_num_reading_events); i++){
+	    linux_perf_read_event_counter( linux_perf_reading_events[i], val);
+            //fprintf(stderr,"FINAL_COUNTING: %lu\n" , perf_scale(val) );//jqswang
+	    fprintf(stderr, " %lu %lu %lu,", val[0], val[1], val[2]);//jqswang
+         }
+            fprintf(stderr, "\n");	
+
             hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseTemporal_inc(reuseTemporal);
             hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseSpatial_inc(reuseSpatial);
-            break;
+         }   break;
         case WP_FALSE_SHARING:
         case WP_IPC_FALSE_SHARING:
             hpcrun_stats_num_accessedIns_inc(accessedIns);
@@ -1340,6 +1355,11 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         //return RETAIN_WP;
         return ALREADY_DISABLED;
     }
+
+    if( wt->accessType == STORE) //jqswang
+	return RETAIN_WP; 
+
+
     // Report a reuse
     double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
     uint64_t numDiffSamples = GetWeightedMetricDiffAndReset(wpi->sample.node, wpi->sample.sampledMetricId, myProportion);
@@ -1350,13 +1370,23 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     uint64_t cacheline_distance = 0;
 
 //    fprintf(stderr, "SECOND_COUNTER:");
-            uint64_t val[3];
-        uint64_t scaled;
-    for (int i=0; i < linux_perf_num_reading_events; i++){
-	linux_perf_read_event_counter( linux_perf_reading_events[i], val);
-	scaled = perf_scale(val);
+            uint64_t val[2][3];
+        //uint64_t scaled;
+    //for (int i=0; i < linux_perf_num_reading_events; i++){
+     for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
+	linux_perf_read_event_counter( linux_perf_reading_events[i], val[i]);
+	//scaled = perf_scale(val);
 //	fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
-	cacheline_distance = perf_get_scaled_counter_delta(val, wpi->sample.cachelineReuseDistance);
+	//cacheline_distance = perf_get_scaled_counter_delta(val, wpi->sample.cachelineReuseDistance);
+	//cacheline_distance = val[1] - wpi->sample.cachelineReuseDistance[1];
+#if 0
+	if (val[1] - wpi->sample.cachelineReuseDistance[1] == val[2] - wpi->sample.cachelineReuseDistance[2]){
+		cacheline_distance = val[0] - wpi->sample.cachelineReuseDistance[0];
+	}
+	else{
+		cacheline_distance = 0;
+	}
+#endif
     }
 //    fprintf(stderr, "\n");
 
@@ -1378,17 +1408,9 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
      fprintf(stderr, "REUSE_DISTANCE (ACC): %lu (rate %lf)\n", cacheline_distance,  ((double)val[0] - wpi->sample.cachelineReuseDistance[0] )/((double)val[2] - wpi->sample.cachelineReuseDistance[2]));
     }
 #endif
-    //fprintf(stderr, "REUSE_DISTANCE: %lu %lu\n", cacheline_distance, inc);
 
-    char marker = 'T'; // T: real data; "F": estimation from counting rate
-    if (cacheline_distance == 0){
-       cacheline_distance = (uint64_t)( (val[1] - wpi->sample.cachelineReuseDistance[1]) * counting_rate);
-       marker = 'F';
-    }
-
-    fprintf(stderr, "REUSE_DISTANCE: %c %lu %lu\n", marker, cacheline_distance, inc);
-
-
+    
+//    fprintf(stderr, "REUSE_DISTANCE: %c %lu %lu %lu\n", marker, cacheline_distance, inc, val[1] - wpi->sample.cachelineReuseDistance[1]);
 
     //prepare the metric updating arrays
     int metricIdArray[4];
@@ -1399,18 +1421,27 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     metricIdArray[2]=reuse_cacheline_distance_metric_id; metricIncArray[2]=cacheline_distance;
     metricIdArray[3]=reuse_trapped_metric_id; metricIncArray[3]=1;
 
+    cct_node_t *reuseNode;
     if (wpi->sample.reuseType == REUSE_TEMPORAL){
         reuseTemporal += inc;
         metricIdArray[0] = temporal_reuse_metric_id;
-	cct_node_t *reuseNode =  getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
+	reuseNode =  getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
         UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
     else {
         reuseSpatial += inc;
         metricIdArray[0] = spatial_reuse_metric_id;
-        cct_node_t *reuseNode =  getPreciseNode(wt->ctxt, wt->pc, spatial_reuse_metric_id );
+        reuseNode =  getPreciseNode(wt->ctxt, wt->pc, spatial_reuse_metric_id );
         UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
+
+    fprintf(stderr, "REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
+    for(int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
+	fprintf(stderr, " %lu %lu %lu,", val[i][0] - wpi->sample.cachelineReuseDistance[i][0],val[i][1] - wpi->sample.cachelineReuseDistance[i][1],val[i][2] - wpi->sample.cachelineReuseDistance[i][2]);
+    }
+    fprintf(stderr, "\n");
+
+
     return ALREADY_DISABLED;
 }
 
@@ -2372,7 +2403,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             accessedIns += metricThreshold;
             SampleData_t sd= {
                 .node = node,
-                .type=WP_RW,
+                .type=WP_RW,  //jqswang: Setting it to WP_READ causes segment fault
                 .accessType=accessType,
                 //.wpLength = accessLen, // set later
                 .accessLength= accessLen,
@@ -2381,7 +2412,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 .preWPAction=theWPConfig->preWPAction,
                 .isBackTrace = false,
             };
-            sd.wpLength = GetFloorWPLength(accessLen);
+            sd.wpLength = 4;//GetFloorWPLength(accessLen); //jqswang
             //if (rdtsc() & 1) { // 50% chance to detect spatial reuse
             if (0){ //jqswang: testing, always temporal reuse
                 int wpSizes[] = {8, 4, 2, 1};
@@ -2410,7 +2441,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
 #endif
             }
             else { // 50% chance to detect the temporal reuse
-                sd.va = data_addr;
+                sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ; //data_addr; //jqswang
                 sd.reuseType = REUSE_TEMPORAL; 
             }
             if (!IsValidAddress(sd.va, precisePC)) {
@@ -2436,18 +2467,20 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             fprintf(stderr,"\n");
 #else
     //fprintf(stderr, "FIRST_COUNTER(rate %lf):", counting_rate);
-    for (int i=0; i < linux_perf_num_reading_events; i++){
+    //for (int i=0; i < linux_perf_num_reading_events; i++){
+      for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
     	uint64_t val[3];
-	uint64_t scaled;
+	//uint64_t scaled;
 	linux_perf_read_event_counter( linux_perf_reading_events[i], val);
-	update_counting_rate(val);
-	scaled = perf_scale(val);
+	//update_counting_rate(val);
+	//scaled = perf_scale(val);
 	//fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
-	memcpy(sd.cachelineReuseDistance, val, sizeof(uint64_t)*3);;
+	memcpy(sd.cachelineReuseDistance[i], val, sizeof(uint64_t)*3);;
     }
     //fprintf(stderr, "\n");
     //sd.cachelineReuseDistance = cachelineCount;
 #endif
+
             // register the watchpoint
             SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
         }
