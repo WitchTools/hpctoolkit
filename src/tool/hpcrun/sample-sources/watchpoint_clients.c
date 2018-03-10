@@ -324,6 +324,54 @@ __thread long ipDiff=0;
 
 
 /******************************************************************************
+ * private tool function 
+*****************************************************************************/
+static int OpenWitchTraceOutput(){
+    #define OUTPUT_TRACE_BUFFER_SIZE (1 <<10)
+    char file_name[PATH_MAX];
+    int ret = snprintf(file_name, PATH_MAX, "%s-%u.reuse.hpcrun", hpcrun_files_executable_name(), syscall(SYS_gettid));
+    if ( ret < 0 || ret >= PATH_MAX){
+        return -1;
+    }
+    int fd = open(file_name, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0){
+        return -1;    
+    }
+    ret = hpcio_outbuf_attach(&(TD_GET(witch_client_trace_output)), fd, hpcrun_malloc(OUTPUT_TRACE_BUFFER_SIZE), OUTPUT_TRACE_BUFFER_SIZE, HPCIO_OUTBUF_UNLOCKED);
+    if (ret != HPCFMT_OK){
+        return -1;
+    }
+    return 0;
+}
+
+static void CloseWitchTraceOutput(){
+    hpcio_outbuf_t *out_ptr = &(TD_GET(witch_client_trace_output));
+    if (out_ptr->fd >= 0){
+        hpcio_outbuf_close(out_ptr);
+    }
+}
+
+static int WriteWitchTraceOutput(const char *fmt, ...){
+    #define LOCAL_BUFFER_SIZE 1024
+    va_list arg;
+    char local_buf[LOCAL_BUFFER_SIZE];
+    va_start(arg, fmt);
+    int data_size = vsnprintf(local_buf, LOCAL_BUFFER_SIZE, fmt, arg);
+    va_end(arg);
+    if (data_size < 0 && data_size >= LOCAL_BUFFER_SIZE){
+        return -1;
+    }
+    int ret = hpcio_outbuf_write(&(TD_GET(witch_client_trace_output)), local_buf, data_size);
+    if (ret != data_size){
+        return -1;
+    }
+    return 0;
+}
+
+
+
+
+/******************************************************************************
  * method functions
  *****************************************************************************/
 
@@ -532,6 +580,7 @@ METHOD_FN(start)
         return;
     }
     td->ss_state[self->sel_idx] = START;
+    assert(OpenWitchTraceOutput()==0);
 }
 
 static void ClientTermination(){
@@ -561,13 +610,18 @@ static void ClientTermination(){
         case WP_REUSE:
 	{
             uint64_t val[3];
-            fprintf(stderr, "FINAL_COUNTING:");
+            //fprintf(stderr, "FINAL_COUNTING:");
+            WriteWitchTraceOutput("FINAL_COUNTING:");
+
     	for (int i=0; i < MIN(2,linux_perf_num_reading_events); i++){
 	    linux_perf_read_event_counter( linux_perf_reading_events[i], val);
-            //fprintf(stderr,"FINAL_COUNTING: %lu\n" , perf_scale(val) );//jqswang
-	    fprintf(stderr, " %lu %lu %lu,", val[0], val[1], val[2]);//jqswang
+	    //fprintf(stderr, " %lu %lu %lu,", val[0], val[1], val[2]);//jqswang
+        WriteWitchTraceOutput(" %lu %lu %lu,", val[0], val[1], val[2]);
          }
-            fprintf(stderr, "\n");	
+            //fprintf(stderr, "\n");	
+            WriteWitchTraceOutput("\n");
+            //close the trace output
+            CloseWitchTraceOutput();
 
             hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseTemporal_inc(reuseTemporal);
@@ -762,7 +816,7 @@ METHOD_FN(stop)
         TMSG(WATCHPOINT,"*WARNING* WATCHPOINT stop called when not in state START");
         return;
     }
-    
+
     ClientTermination();
     
     if (ENABLED(PRINTTOPN))
@@ -857,6 +911,14 @@ METHOD_FN(process_event_list, int lush_metrics)
             break;
             
         case WP_REUSE:
+            {
+            //set up the trace output
+            //char file_name[PATH_MAX];
+            //int ret = snprintf(file_name, PATH_MAX, "%s-%d.reuse.hpcrun", hpcrun_get_executable_name(), TD_GET(core_profile_trace_data.id)); 
+            //int fd = open(str, O_WRONLY | O_CREAT | O_EXCL, 0644);
+            //assert(fd > 0);
+            //hpcio_outbuf_attach(&(TD_GET(witch_client_trace_output)), fd, hpcrun_malloc(1<<10), 1<<10, HPCIO_OUTBUF_UNLOCKED);
+
             temporal_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(temporal_reuse_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
             spatial_reuse_metric_id = hpcrun_new_metric();
@@ -867,6 +929,7 @@ METHOD_FN(process_event_list, int lush_metrics)
             hpcrun_set_metric_info_and_period(reuse_cacheline_distance_metric_id, "CACHELIN_DISTANCE", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_trapped_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(reuse_trapped_metric_id, "REUSE_TRAP_COUNT", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            }
             break;
         case WP_ALL_SHARING:
         case WP_IPC_ALL_SHARING:
@@ -1435,11 +1498,14 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
 
-    fprintf(stderr, "REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
+//    fprintf(stderr, "REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
+    WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
     for(int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
-	fprintf(stderr, " %lu %lu %lu,", val[i][0] - wpi->sample.cachelineReuseDistance[i][0],val[i][1] - wpi->sample.cachelineReuseDistance[i][1],val[i][2] - wpi->sample.cachelineReuseDistance[i][2]);
+//	fprintf(stderr, " %lu %lu %lu,", val[i][0] - wpi->sample.cachelineReuseDistance[i][0],val[i][1] - wpi->sample.cachelineReuseDistance[i][1],val[i][2] - wpi->sample.cachelineReuseDistance[i][2]);
+    WriteWitchTraceOutput(" %lu %lu %lu,", val[i][0] - wpi->sample.cachelineReuseDistance[i][0],val[i][1] - wpi->sample.cachelineReuseDistance[i][1],val[i][2] - wpi->sample.cachelineReuseDistance[i][2]);
     }
-    fprintf(stderr, "\n");
+//    fprintf(stderr, "\n");
+    WriteWitchTraceOutput("\n");
 
 
     return ALREADY_DISABLED;
