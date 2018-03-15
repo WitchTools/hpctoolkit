@@ -509,8 +509,13 @@ hpcrun_get_weighted_metric_diff(int metric_id1, int metric_id2,
             diff->i = (loc1->i - loc2->i);
             break;
         case MetricFlags_ValFmt_Real:
-            assert(loc1->r >= loc2->r);
-            diff->r = (loc1->r - loc2->r);
+            //assert(loc1->r >= loc2->r); //jqswang
+            if (loc1->r < loc2->r){
+                diff->r = 0;
+            }
+            else {
+                diff->r = (loc1->r - loc2->r);
+            }
             diffWithPeriod->r = (loc1->r - loc2->r) * minfo1->period;
             break;
         default:

@@ -486,6 +486,7 @@ static void CreateDummyHardwareEvent(void) {
     int perf_fd = perf_event_open(&pe, 0, -1, -1, 0);
     if (perf_fd == -1) {
         EMSG("Failed to open perf event file: %s\n", strerror(errno));
+        printf("errno: %d %s\n", errno, strerror(errno));
         monitor_real_abort();
     }
     tData.lbrDummyFD = perf_fd;
