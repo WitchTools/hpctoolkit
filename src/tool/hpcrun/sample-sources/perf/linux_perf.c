@@ -471,7 +471,7 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     perf_mmap_data_src_t data_src;
     data_src.val = mmap_data->data_src;
     if ( (data_src.mem_lvl & PERF_MEM_LVL_HIT) && (data_src.mem_lvl & PERF_MEM_LVL_L1)){ // L1 HIT, ignore
-      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t){.i=0}, 0/*skipInner*/, 0/*isSync*/, NULL);
+      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t){.r=counter}, 0/*skipInner*/, 0/*isSync*/, NULL);
     }
     else {
       *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t) {.r=counter}, 0/*skipInner*/, 0/*isSync*/, &info);
