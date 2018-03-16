@@ -324,7 +324,7 @@ __thread long ipDiff=0;
 
 
 /******************************************************************************
- * private tool function 
+ * private tool function
 *****************************************************************************/
 static int OpenWitchTraceOutput(){
     #define OUTPUT_TRACE_BUFFER_SIZE (1 <<10)
@@ -335,7 +335,7 @@ static int OpenWitchTraceOutput(){
     }
     int fd = open(file_name, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0){
-        return -1;    
+        return -1;
     }
     ret = hpcio_outbuf_attach(&(TD_GET(witch_client_trace_output)), fd, hpcrun_malloc(OUTPUT_TRACE_BUFFER_SIZE), OUTPUT_TRACE_BUFFER_SIZE, HPCIO_OUTBUF_UNLOCKED);
     if (ret != HPCFMT_OK){
@@ -468,7 +468,7 @@ static WpClientConfig_t wpClientConfig[] = {
         .preWPAction = DISABLE_WP,
         .configOverrideCallback = IPCTrueSharingWPConfigOverride
     }
-    
+
 };
 
 
@@ -574,7 +574,7 @@ METHOD_FN(start)
 {
     thread_data_t* td = hpcrun_get_thread_data();
     source_state_t my_state = TD_GET(ss_state)[self->sel_idx];
-    
+
     if (my_state == START) {
         TMSG(WATCHPOINT,"*NOTE* WATCHPOINT start called when already in state START");
         return;
@@ -588,7 +588,7 @@ static void ClientTermination(){
     hpcrun_stats_num_samples_imprecise_inc(wpStats.numImpreciseSamples);
     hpcrun_stats_num_watchpoints_set_inc(wpStats.numWatchpointsSet);
     WatchpointThreadTerminate();
-    
+
     switch (theWPConfig->id) {
         case WP_DEADSPY:
             hpcrun_stats_num_writtenBytes_inc(writtenBytes);
@@ -618,7 +618,7 @@ static void ClientTermination(){
 	    //fprintf(stderr, " %lu %lu %lu,", val[0], val[1], val[2]);//jqswang
         WriteWitchTraceOutput(" %lu %lu %lu,", val[0], val[1], val[2]);
          }
-            //fprintf(stderr, "\n");	
+            //fprintf(stderr, "\n");
             WriteWitchTraceOutput("\n");
             //close the trace output
             CloseWitchTraceOutput();
@@ -652,7 +652,7 @@ static void ClientTermination(){
             hpcrun_stats_num_trueWWIns_inc(trueWWIns);
             hpcrun_stats_num_trueRWIns_inc(trueRWIns);
             hpcrun_stats_num_trueWRIns_inc(trueWRIns);
-            
+
         default:
             break;
     }
@@ -678,10 +678,10 @@ TopN(cct_node_t* node, cct_op_arg_t arg, size_t level)
         if (!set) return;
         hpcrun_metricVal_t *loc = hpcrun_metric_set_loc(set, metricID);
         if (!loc) return;
-        
+
         uint64_t val = loc->i;
         if (val == 0) return;
-        
+
         for (i=0; i<N; i++) {
             if (!topNNode[i]) {
                 topNNode[i] = node;
@@ -712,10 +712,10 @@ PrintTopN(int metricID)
     thread_data_t *td = hpcrun_get_thread_data();
     cct_node_t *root = td->core_profile_trace_data.epoch->csdata.tree_root;
     //TODO: partial? cct_node_t *partial = td->core_profile_trace_data.epoch->csdata.partial_unw_root;
-    
+
     // trave root first and then partial second
     hpcrun_cct_walk_node_1st(root, TopN, (void *) metricID);
-    
+
     int i, j;
     for (i=0; i<N; i++) {
         cct_node_t *node1 = topNNode[i];
@@ -729,7 +729,7 @@ PrintTopN(int metricID)
             metric_set_t *set2 = hpcrun_get_metric_set(node2);
             hpcrun_metricVal_t *loc2 = hpcrun_metric_set_loc(set2, metricID);
             uint64_t val2 = loc2->i;
-            
+
             if (val2 > val1) {
                 cct_node_t *tmp = topNNode[i];
                 topNNode[i] = topNNode[j];
@@ -746,9 +746,9 @@ end:
         path = default_path;
     }
     sprintf(path, "%s/%s", path, "topN.log");
-    
+
     fd = fopen(path, "a+");
-    
+
     int libmonitorId, libhpcrunId;
     // print loadmodule info first
     fprintf (fd, "<LOADMODULES>\n");
@@ -806,22 +806,22 @@ METHOD_FN(stop)
     //thread_data_t *td = hpcrun_get_thread_data();
     //int nevents = self->evl.nevents;
     source_state_t my_state = TD_GET(ss_state)[self->sel_idx];
-    
+
     if (my_state == STOP) {
         TMSG(WATCHPOINT,"*NOTE* WATCHPOINT stop called when already in state STOP");
         return;
     }
-    
+
     if (my_state != START) {
         TMSG(WATCHPOINT,"*WARNING* WATCHPOINT stop called when not in state START");
         return;
     }
 
     ClientTermination();
-    
+
     if (ENABLED(PRINTTOPN))
         PrintTopN(dead_metric_id);
-    
+
     TD_GET(ss_state)[self->sel_idx] = STOP;
 }
 
@@ -829,7 +829,7 @@ static void
 METHOD_FN(shutdown)
 {
     TMSG(WATCHPOINT, "shutdown");
-    
+
     METHOD_CALL(self, stop); // make sure stop has been called
     self->state = UNINIT;
 }
@@ -873,7 +873,7 @@ METHOD_FN(process_event_list, int lush_metrics)
     }
     char* evlist = METHOD_CALL(self, get_event_str);
     char* event = start_tok(evlist);
-    
+
     // only one supported
     for(int i = 0; i < WP_MAX_CLIENTS; i++) {
         if (hpcrun_ev_is(event, wpClientConfig[i].name)) {
@@ -881,17 +881,17 @@ METHOD_FN(process_event_list, int lush_metrics)
             break;
         }
     }
-    
+
     wpStats.numImpreciseSamples = 0;
     wpStats.numWatchpointsSet = 0;
     WatchpointThreadInit(theWPConfig->wpCallback);
-    
+
     if(theWPConfig->configOverrideCallback){
         theWPConfig->configOverrideCallback(0);
     }
-    
+
     PopulateBlackListAddresses();
-    
+
     switch (theWPConfig->id) {
         case WP_DEADSPY:
             measured_metric_id = hpcrun_new_metric();
@@ -899,7 +899,7 @@ METHOD_FN(process_event_list, int lush_metrics)
             dead_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(dead_metric_id, "BYTES_DEAD", MetricFlags_ValFmt_Int, 1, metric_property_none);
             break;
-            
+
         case WP_REDSPY:
         case WP_LOADSPY:
             measured_metric_id = hpcrun_new_metric();
@@ -909,12 +909,12 @@ METHOD_FN(process_event_list, int lush_metrics)
             redApprox_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(redApprox_metric_id, "BYTES_RED_APPROX", MetricFlags_ValFmt_Int, 1, metric_property_none);
             break;
-            
+
         case WP_REUSE:
             {
             //set up the trace output
             //char file_name[PATH_MAX];
-            //int ret = snprintf(file_name, PATH_MAX, "%s-%d.reuse.hpcrun", hpcrun_get_executable_name(), TD_GET(core_profile_trace_data.id)); 
+            //int ret = snprintf(file_name, PATH_MAX, "%s-%d.reuse.hpcrun", hpcrun_get_executable_name(), TD_GET(core_profile_trace_data.id));
             //int fd = open(str, O_WRONLY | O_CREAT | O_EXCL, 0644);
             //assert(fd > 0);
             //hpcio_outbuf_attach(&(TD_GET(witch_client_trace_output)), fd, hpcrun_malloc(1<<10), 1<<10, HPCIO_OUTBUF_UNLOCKED);
@@ -940,7 +940,7 @@ METHOD_FN(process_event_list, int lush_metrics)
             SetUpFalseSharingMetrics();
             SetUpTrueSharingMetrics();
             break;
-            
+
         case WP_FALSE_SHARING:
         case WP_IPC_FALSE_SHARING:
             // must have a canonical load map across processes
@@ -949,7 +949,7 @@ METHOD_FN(process_event_list, int lush_metrics)
             hpcrun_set_metric_info_and_period(measured_metric_id, "MONITORED", MetricFlags_ValFmt_Int, 1, metric_property_none);
             SetUpFalseSharingMetrics();
             break;
-            
+
         case WP_TRUE_SHARING:
         case WP_IPC_TRUE_SHARING:
             // must have a canonical load map across processes
@@ -958,7 +958,7 @@ METHOD_FN(process_event_list, int lush_metrics)
             hpcrun_set_metric_info_and_period(measured_metric_id, "MONITORED", MetricFlags_ValFmt_Int, 1, metric_property_none);
             SetUpTrueSharingMetrics();
             break;
-            
+
         default:
             break;
     }
@@ -1219,14 +1219,14 @@ static WPTriggerActionType DeadStoreWPCallback(WatchPointInfo_t *wpi, int startO
         // if the ip is 0, let's drop the WP
         return ALREADY_DISABLED;
     }
-    
+
     // This is a approximation.
     // If we took N samples at wpi->sample.node since the last time a WP triggered here,
     // If this a dead write, we'll update the dead_writes metric at the call path <wpi->sample.node:KILLED_BY:curctxt>
     // Otherwise (not dead), we'll update the used_writes metric at the call path <wpi->sample.node:USED_BY:curctxt>
     // In either case, the increment will be (N * overlapBytes)
     // Bump up watermark_metric_id to match sampledMetricId
-    
+
     double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
     uint64_t numDiffSamples = GetWeightedMetricDiffAndReset(wpi->sample.node, wpi->sample.sampledMetricId, myProportion);
     int overlapBytes = GET_OVERLAP_BYTES(wpi->sample.va, wpi->sample.wpLength, wt->va, wt->accessLength);
@@ -1234,7 +1234,7 @@ static WPTriggerActionType DeadStoreWPCallback(WatchPointInfo_t *wpi, int startO
         fprintf(stderr, "\n wpi->sample.va=%p, wpi->sample.wpLength = %d,  wt->va = %p, wt->accessLength=%d\n", wpi->sample.va, wpi->sample.wpLength, wt->va, wt->accessLength);
         monitor_real_abort();
     }
-    
+
     // Now increment dead_metric_id by numDiffSamples * wpi->sample.accessLength
     // I could have done numDiffSamples * overlapBytes, but it will cause misattribution when access sizes are not same at dead and kill sites.
     // Basically, we are assuming that whatever happened in the observed watchpoints is applicable to the entire access length
@@ -1275,10 +1275,10 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
         // if the ip is 0, let's drop the WP
         return ALREADY_DISABLED;
     }
-    
+
     bool isFloatOperation = wt->floatType == ELEM_TYPE_UNKNOWN? false: true;
     bool redBytes = 0;
-    
+
     // check integer instructions
     int overlapLen = GET_OVERLAP_BYTES(wt->va, safeAccessLen, wpi->sample.va, wpi->sample.wpLength);
     if(overlapLen <= 0){
@@ -1289,17 +1289,17 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
     int joinNodeIdx = wpi->sample.isSamplePointAccurate? E_ACCURATE_JOIN_NODE_IDX : E_INACCURATE_JOIN_NODE_IDX;
     int firstOffest = FIRST_OVERLAPPED_BYTE_OFFSET_IN_FIRST(wt->va, safeAccessLen, wpi->sample.va, wpi->sample.wpLength);
     int secondOffest = FIRST_OVERLAPPED_BYTE_OFFSET_IN_FIRST(wt->va, safeAccessLen, wpi->sample.va, wpi->sample.wpLength);
-    
+
     void * wpiStartByte = wpi->sample.va + secondOffest;
     void * wtStartByte = wt->va + firstOffest;
     // if the overlapLen is not 4 or 8, we cannot do any FP, DP approximation.
     //wpiStartByte and wtStartByte are not 4 or 8 byte aligned, we cannot do any FP, DP approximation.
-    
+
     // If we got an insane address that cannot be read, return silently
     if(!IsAddressReadable(wtStartByte)){
         return ALREADY_DISABLED;
     }
-    
+
     if(isFloatOperation){
         switch (wt->floatType) {
             case ELEM_TYPE_SINGLE:{
@@ -1329,7 +1329,7 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
                 }
             }
                 break;
-                
+
             case ELEM_TYPE_DOUBLE:{
                 if(overlapLen < sizeof(double)){
                     goto TreatLikeInteger;
@@ -1355,7 +1355,7 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
                 }
             }
                 break;
-                
+
             default: // unhandled!!
                 goto TreatLikeInteger;
                 break;
@@ -1378,10 +1378,10 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
             UpdateConcatenatedPathPair(wt->ctxt, wpi->sample.node /* oldNode*/, joinNodes[E_NEW_VAL][joinNodeIdx] /* joinNode*/, measured_metric_id /* checkedMetric */, inc);
         }
     }else /* non float */{
-        
+
     TreatLikeInteger:
         ;
-        
+
         for(int i = firstOffest, k = secondOffest ; i < firstOffest + overlapLen; i++, k++){
             if(((uint8_t*)(wt->va))[i] == wpi->value[k]) {
                 redBytes ++;
@@ -1392,7 +1392,7 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
         }
         double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
         uint64_t numDiffSamples = GetWeightedMetricDiffAndReset(wpi->sample.node, wpi->sample.sampledMetricId, myProportion);
-        
+
         if(redBytes != 0) {
             // Now increment metric: if the entire overlap is redundant, amplify to numDiffSamples * wpi->sample.accessLength
             // This is an approximation of what might have happened.
@@ -1419,9 +1419,8 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         return ALREADY_DISABLED;
     }
 
-    if( wt->accessType == STORE) //jqswang
-	return RETAIN_WP; 
-
+    //if( wt->accessType == STORE) //jqswang
+	//return RETAIN_WP; 
 
     // Report a reuse
     double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
@@ -1472,13 +1471,13 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     }
 #endif
 
-    
+
 //    fprintf(stderr, "REUSE_DISTANCE: %c %lu %lu %lu\n", marker, cacheline_distance, inc, val[1] - wpi->sample.cachelineReuseDistance[1]);
 
     //prepare the metric updating arrays
     int metricIdArray[4];
     uint64_t metricIncArray[4];
-    
+
     metricIncArray[0]=inc;
     metricIdArray[1]=reuse_time_distance_metric_id; metricIncArray[1]=time_distance;
     metricIdArray[2]=reuse_cacheline_distance_metric_id; metricIncArray[2]=cacheline_distance;
@@ -1544,7 +1543,7 @@ static WPTriggerActionType FalseSharingWPCallback(WatchPointInfo_t *wpi, int sta
             joinNode = joinNodes[E_FALSE_WW_SHARE][joinNodeIdx];
         }
     }
-    
+
     sample_val_t v = hpcrun_sample_callpath(wt->ctxt, measured_metric_id, SAMPLE_UNIT_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     // insert a special node
     cct_node_t *node = hpcrun_insert_special_node(v.sample_node, joinNode);
@@ -1579,7 +1578,7 @@ static WPTriggerActionType TrueSharingWPCallback(WatchPointInfo_t *wpi, int star
             joinNode = joinNodes[E_TRUE_WW_SHARE][joinNodeIdx];
         }
     }
-    
+
     sample_val_t v = hpcrun_sample_callpath(wt->ctxt, measured_metric_id, SAMPLE_UNIT_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     // insert a special node
     cct_node_t *node = hpcrun_insert_special_node(v.sample_node, joinNode);
@@ -1610,7 +1609,7 @@ static WPTriggerActionType IPCFalseSharingWPCallback(WatchPointInfo_t *wpi, int 
             joinNode = joinNodes[E_IPC_FALSE_WW_SHARE][joinNodeIdx];
         }
     }
-    
+
     sample_val_t v = hpcrun_sample_callpath(wt->ctxt, measured_metric_id, SAMPLE_UNIT_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     // insert a special node
     cct_node_t *node = hpcrun_insert_special_node(v.sample_node, joinNode);
@@ -1639,7 +1638,7 @@ static WPTriggerActionType IPCTrueSharingWPCallback(WatchPointInfo_t *wpi, int s
             joinNode = joinNodes[E_IPC_TRUE_WW_SHARE][joinNodeIdx];
         }
     }
-    
+
     sample_val_t v = hpcrun_sample_callpath(wt->ctxt, measured_metric_id, SAMPLE_UNIT_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     // insert a special node
     cct_node_t *node = hpcrun_insert_special_node(v.sample_node, joinNode);
@@ -1658,7 +1657,7 @@ static inline bool IsLibMonitorAddress(void * addr) {
     if(!libmonitorLM){
         libmonitorLM = hpcrun_loadmap_findByName(hpcrun_loadmap_findLoadName("libmonitor.so"))->dso_info;
     }
-    
+
     if (addr >= libmonitorLM->start_addr && addr < libmonitorLM->end_addr){
         return true;
     }
@@ -1669,7 +1668,7 @@ static inline bool IsHPCRunAddress(void * addr) {
     if(!hpcrunLM){
         hpcrunLM = hpcrun_loadmap_findByName(hpcrun_loadmap_findLoadName("libhpcrun.so"))->dso_info;
     }
-    
+
     if (addr >= hpcrunLM->start_addr && addr < hpcrunLM->end_addr){
         return true;
     }
@@ -1697,7 +1696,7 @@ static inline bool IsValidAddress(void * addr, void * pc){
     thread_data_t * td =  hpcrun_get_thread_data();
     if( (addr == 0) )
         return false;
-    
+
     if( (pc == 0) )
         return false;
 
@@ -1706,15 +1705,15 @@ static inline bool IsValidAddress(void * addr, void * pc){
     if(IsAltStackAddress(addr))
         return false;
     if(IsFSorGS(addr))
-        return false;   
- 
+        return false;
+
     if(IsBlackListedWatchpointAddress(addr) || IsBlackListedWatchpointAddress(pc)){
         return false;
     }
-    
+
     if (isTdataAddress(addr))
         return false;
-    
+
     if((addr && !(((unsigned long)addr) & 0xF0000000000000)) &&
        (pc && !(((unsigned long)pc) & 0xF0000000000000)))
         return true;
@@ -1728,7 +1727,7 @@ void ReadSharedDataTransactionally(SharedData_t *localSharedData){
         int64_t startCounter = gSharedData.counter;
         if(startCounter & 1)
             continue; // Some writer is updating
-        
+
         __sync_synchronize();
         *localSharedData = gSharedData;
         __sync_synchronize();
@@ -1752,7 +1751,7 @@ int static inline GetFloorWPLength(int accessLen){
 
 int static inline GetFloorWPLengthAtAddress(void * address, int accessLen){
     uint8_t alignment = ((size_t) address) & (MAX_WP_LENGTH -1);
-    
+
     switch (alignment) {
         case 1: case 3: case 5: case 7: /* 1-byte aligned */ return 1;
         case 2: case 6: /* 2-byte aligned */ return MIN(2, accessLen);
@@ -1877,7 +1876,7 @@ void ReadIPCSharedDataTransactionally(IPC_FSInfo *ipcFSInfo){
         int64_t startCounter = ipcSharedData->counter;
         if(startCounter & 1)
             continue; // Some writer is updating
-        
+
         __sync_synchronize();
         *ipcFSInfo = ipcSharedData->fsInfo;
         __sync_synchronize();
@@ -1911,11 +1910,11 @@ static inline void create_shared_memory() {
     if(__sync_bool_compare_and_swap(&ipcSharedData, 0, ptr)){
         hpcrun_process_aux_cleanup_add(destroy_shared_memory, NULL);
     }
-       
+
 }
 
 uint16_t GetOrCreateIPCSharedLMEntry(const char * realPath){
-    
+
     if(ipcSharedData == NULL)
         create_shared_memory();
     // start from 1; leave 0 out;
@@ -1957,7 +1956,7 @@ unsigned long GetPFN(unsigned long virt_addr){
         printf("Error! Cannot open %s\n", PA_PATH);
         goto ErrExit;
     }
-    
+
     //Shifting by virt-addr-offset number of bytes
     //and multiplying by the size of an address (the size of an entry in pagemap file)
     uint64_t file_offset = virt_addr / getpagesize() * PAGEMAP_ENTRY;
@@ -1980,9 +1979,9 @@ unsigned long GetPFN(unsigned long virt_addr){
         else
             c_buf[PAGEMAP_ENTRY - i - 1] = c;
     }
-    
+
     fclose(f);
-    
+
     for(int i=0; i < PAGEMAP_ENTRY; i++){
         //printf("%d ",c_buf[i]);
         read_val = (read_val << 8) + c_buf[i];
@@ -1995,14 +1994,14 @@ unsigned long GetPFN(unsigned long virt_addr){
     //        printf("Page not present\n");
     //    if(GET_BIT(read_val, 62))
     //        printf("Page swapped\n");
-    
+
     return INVALID_PHYSICAL_ADDRESS;
 ErrExit:
     if(f){
         fclose(f);
     }
     return INVALID_PHYSICAL_ADDRESS;
-    
+
 }
 
 
@@ -2020,7 +2019,7 @@ static inline struct VAPAMap* splayPAtoVAMap(struct VAPAMap* root, unsigned long
 
 static void InsertVAtoPAMap(void * va, unsigned long pa){
     VAPAMap_t * found    = splayVAtoPAMap(vaToPAMap, va);
-    
+
     // Check if a trace node with traceKey already exists under this context node
     if(found && (va == found->virtualAddress)) {
         vaToPAMap = found;
@@ -2049,7 +2048,7 @@ static void InsertVAtoPAMap(void * va, unsigned long pa){
 
 static void InsertPAtoVAMap(unsigned long pa, void * va){
     VAPAMap_t * found    = splayPAtoVAMap(paToVAMap, pa);
-    
+
     // Check if a trace node with traceKey already exists under this context node
     if(found && (pa == found->physicalAddress)) {
         paToVAMap = found;
@@ -2142,7 +2141,7 @@ static void UpdateVMMap(){
     if(s != 0){
         fprintf(stderr, "\n Failed to STAT %s", VA_PATH);
     }
-    
+
     if( ((lastVMMAPCheck % VM_MAP_CHECK_FREQUENCY) == 0)
        && (lastMapChangeTime != mapsStat.st_mtime)) {
         // New mapping
@@ -2165,11 +2164,11 @@ static void HandleIPCFalseSharing(void * data_addr, void * pc, cct_node_t *node,
     unsigned long pa = GetPAfromVA(data_addr);
     // Ok, on a shared page!
     // Ok to publish new data?
-    
+
     // Is the published address old enough (stayed for > 1 sample time span)
     int64_t curTime = rdtsc();
     volatile IPC_FSInfo * globalIPCInfo = &(ipcSharedData->fsInfo);
-    
+
     pid_t me = myTid;
     // Get the time, tid, and counter
     // This is definately racy but benign.
@@ -2180,14 +2179,14 @@ static void HandleIPCFalseSharing(void * data_addr, void * pc, cct_node_t *node,
        && (pa != INVALID_PHYSICAL_ADDRESS) // my PA is a valid address
        ) {
         // Attempt to lockout
-        
+
         if(__sync_bool_compare_and_swap(&(ipcSharedData->counter), theCounter, theCounter+1)){
         } else {
             // Failed to update ==> someone else succeeded ==> Fetch that address and set a WP for that
             goto SET_FS_WP;
         }
-        
-        
+
+
         globalIPCInfo->time = rdtsc();
         globalIPCInfo->tid = myTid;
         globalIPCInfo->wpType = accessType == LOAD ? WP_WRITE : WP_RW;
@@ -2195,7 +2194,7 @@ static void HandleIPCFalseSharing(void * data_addr, void * pc, cct_node_t *node,
         globalIPCInfo->address = pa;
         globalIPCInfo->offset = PAGE_OFFSET(data_addr);
         globalIPCInfo->accessLen = accessLen;
-        
+
         int btLen = 0;
         for(; btLen < MAX_BACKTRACE_LEN - 1; btLen++){
             if (node == NULL)
@@ -2203,7 +2202,7 @@ static void HandleIPCFalseSharing(void * data_addr, void * pc, cct_node_t *node,
             globalIPCInfo->backtrace[btLen] = *hpcrun_cct_addr(node);
             node = hpcrun_cct_parent(node);
         }
-        
+
         // unlikely; if btLen == MAX_BACKTRACE_LEN; drop the WP by invalidating it
         if (btLen == MAX_BACKTRACE_LEN -1 ) {
             globalIPCInfo->tid = -1;
@@ -2223,12 +2222,12 @@ static void HandleIPCFalseSharing(void * data_addr, void * pc, cct_node_t *node,
         if(va == INVALID_VIRUAL_ADDRESS) {
             goto ErrExit;
         }
-        
+
         va = va + localIPCInfo.offset;
-        
+
         long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
         accessedIns += metricThreshold;
-        
+
         switch (theWPConfig->id) {
             case WP_IPC_TRUE_SHARING:{
                 // Set WP at the same address
@@ -2296,7 +2295,7 @@ bool PrintStats(){
     void *  contextIP = hpcrun_context_pc(context);
     int v1 = get_access_type(mmap_data->ip);
     int v2 = get_access_type(contextIP);
-    
+
     switch(v1){
         case 0: unk1++; break;
         case 1: ld1++; break;
@@ -2311,7 +2310,7 @@ bool PrintStats(){
         case 3: mix2++; break;
         default: break;
     }
-    
+
     float tot = unk1 + ld1 + st1 + mix1;
     fprintf(stderr, "W=%f (%f), L=%f(%f), M=%f(%f), U=%f(%f)\n", st1/tot, st2/tot, ld1/tot, ld2/tot, mix1/tot, mix2/tot, unk1/tot, unk2/tot);
     /*
@@ -2325,7 +2324,7 @@ bool PrintStats(){
     void *  contextIP = hpcrun_context_pc(context);
     extern int is_same_function(void *ins1, void* ins2);
     int samev1 = is_same_function(contextIP, mmap_data->ip);
-    
+
     switch(samev1){
         case 0: difffunc++; break;
         case 1: samefunc++; break;
@@ -2348,12 +2347,12 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
     if (!IsValidAddress(data_addr, precisePC)) {
         goto ErrExit; // incorrect access type
     }
-    
+
     // do not monitor NULL CCT node
     if (node == NULL) {
         goto ErrExit; // incorrect CCT
     }
-    
+
    // fprintf(stderr, " numWatchpointsSet=%lu\n", wpStats.numWatchpointsSet);
 
    int accessLen;
@@ -2367,7 +2366,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
        //EMSG("Sampled sd.accessType = %d, accessLen=%d at precisePC = %p\n", accessType, accessLen, precisePC);
        goto ErrExit; // incorrect access type
    }
-    
+
     // if the context PC and precise PC are not in the same function, then the sample point is inaccurate.
     bool isSamplePointAccurate;
     FunctionType ft = is_same_function(contextPC, precisePC);
@@ -2376,14 +2375,14 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
     } else {
         isSamplePointAccurate = false;
     }
-    
+
     switch (theWPConfig->id) {
         case WP_DEADSPY:{
             if(accessType == LOAD){
                 //EMSG("Sampled accessType = %d\n", accessType);
                 goto ErrExit; // incorrect access type
             }
-            
+
             long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
             writtenBytes += accessLen * metricThreshold;
             SampleData_t sd= {
@@ -2402,7 +2401,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
         }
             break;
-            
+
         case WP_REDSPY:{
             // If we got an insane address that cannot be read, return silently
             if(!IsAddressReadable(data_addr)){
@@ -2508,7 +2507,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             }
             else { // 50% chance to detect the temporal reuse
                 sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ; //data_addr; //jqswang
-                sd.reuseType = REUSE_TEMPORAL; 
+                sd.reuseType = REUSE_TEMPORAL;
             }
             if (!IsValidAddress(sd.va, precisePC)) {
                 goto ErrExit; // incorrect access type
@@ -2554,7 +2553,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
         case WP_FALSE_SHARING:
         case WP_TRUE_SHARING:
         case WP_ALL_SHARING:{
-            
+
             // Is the published address old enough (stayed for > 1 sample time span)
             int64_t curTime = rdtsc();
             SharedData_t localSharedData;
@@ -2564,7 +2563,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             localSharedData.time = gSharedData.time;
             localSharedData.tid = gSharedData.tid;
             localSharedData.counter = gSharedData.counter;
-            
+
             //ReadSharedDataTransactionally(&localSharedData);
             if( ((curTime-localSharedData.time) > 2 * (curTime-lastTime)) // Sufficient time passed since the last time somebody published
                &&
@@ -2580,7 +2579,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 localSharedData.accessLen = accessLen;
                 localSharedData.counter ++; // makes the counter odd
                 localSharedData.node = node;
-                
+
                 if(__sync_bool_compare_and_swap(&gSharedData.counter, theCounter, theCounter+1)){
                     gSharedData = localSharedData;
                     __sync_synchronize();
@@ -2594,7 +2593,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             SET_FS_WP: ReadSharedDataTransactionally(&localSharedData);
                 long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
                 accessedIns += metricThreshold;
-                
+
                 switch (theWPConfig->id) {
                     case WP_TRUE_SHARING:{
                         // Set WP at the same address
@@ -2679,7 +2678,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             lastTime = curTime;
         }
             break;
-            
+
         case WP_IPC_FALSE_SHARING:
         case WP_IPC_TRUE_SHARING: {
             UpdateVMMap();
@@ -2691,10 +2690,9 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
     }
     wpStats.numWatchpointsSet ++;
     return true;
-    
+
 ErrExit:
     wpStats.numImpreciseSamples ++;
     return false;
-    
-}
 
+}
