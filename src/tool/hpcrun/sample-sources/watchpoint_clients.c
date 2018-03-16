@@ -576,7 +576,9 @@ METHOD_FN(start)
         return;
     }
     td->ss_state[self->sel_idx] = START;
-    //assert(OpenWitchTraceOutput()==0); //jqswang: for reuse-histo
+#ifdef REUSE_HISTO
+    assert(OpenWitchTraceOutput()==0); 
+#endif
 }
 
 static void ClientTermination(){
@@ -605,7 +607,7 @@ static void ClientTermination(){
             break;
         case WP_REUSE:
 	{
-        #if 0 //jqswang: for reuse-histo
+#ifdef REUSE_HISTO
             uint64_t val[3];
             //fprintf(stderr, "FINAL_COUNTING:");
             WriteWitchTraceOutput("FINAL_COUNTING:");
@@ -619,7 +621,7 @@ static void ClientTermination(){
             WriteWitchTraceOutput("\n");
             //close the trace output
             CloseWitchTraceOutput();
-        #endif
+#endif
             hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseTemporal_inc(reuseTemporal);
             hpcrun_stats_num_accessedIns_inc(accessedIns);
@@ -1491,7 +1493,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
     }
 
-#if 0 //jqswang : it is for reuse-histo
+#ifdef REUSE_HISTO 
     WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
     for(int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
 
@@ -1499,8 +1501,6 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     }
 //    fprintf(stderr, "\n");
     WriteWitchTraceOutput("\n");
-#else
-
 #endif
 
     return ALREADY_DISABLED;
@@ -2473,10 +2473,19 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 .preWPAction=theWPConfig->preWPAction,
                 .isBackTrace = false,
             };
+#ifdef REUSE_HISTO
+            sd.wpLength = 4;
+#else
             sd.wpLength = GetFloorWPLength(accessLen);
-            //sd.wpLength = 4;// jqswang: it is for reuse-histo
-            if (rdtsc() & 1) { // 50% chance to detect spatial reuse
-            //if (0){ //jqswang: it is for reuse-histo
+#endif
+
+
+#ifdef REUSE_HISTO
+            if (0)
+#else
+            if (rdtsc() & 1)// 50% chance to detect spatial reuse
+#endif
+            {
                 int wpSizes[] = {8, 4, 2, 1};
                 FalseSharingLocs falseSharingLocs[CACHE_LINE_SZ];
                 int numFSLocs = 0;
@@ -2503,8 +2512,11 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
 #endif
             }
             else { // 50% chance to detect the temporal reuse
+#ifdef REUSE_HISTO
+                sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ;
+#else
                 sd.va = data_addr;
-                //sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ;  //jqswang: it is for reuse-histo
+#endif
                 sd.reuseType = REUSE_TEMPORAL;
             }
             if (!IsValidAddress(sd.va, precisePC)) {
