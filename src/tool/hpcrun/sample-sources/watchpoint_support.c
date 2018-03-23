@@ -281,9 +281,9 @@ static void InitConfig(){
     if(replacementScheme){
         if(0 == strcasecmp(replacementScheme, "AUTO")) {
             wpConfig.replacementPolicy = AUTO;
-        } if (0 == strcasecmp(replacementScheme, "OLDEST")) {
+        } else if (0 == strcasecmp(replacementScheme, "OLDEST")) {
             wpConfig.replacementPolicy = OLDEST;
-        } if (0 == strcasecmp(replacementScheme, "NEWEST")) {
+        } else if (0 == strcasecmp(replacementScheme, "NEWEST")) {
             wpConfig.replacementPolicy = NEWEST;
         } else {
             // default;

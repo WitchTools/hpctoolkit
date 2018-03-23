@@ -146,8 +146,12 @@ int latency_metric_id = -1;
 int temporal_reuse_metric_id = -1;
 int spatial_reuse_metric_id = -1;
 int reuse_time_distance_metric_id = -1; // use rdtsc() to represent the reuse distance
-int reuse_cacheline_distance_metric_id = -1; // use cache miss to reprent the reuse distance
-int reuse_trapped_metric_id = -1; // the times of a watch point trapped
+int reuse_time_distance_count_metric_id = -1; // how many times reuse_time_distance_metric is incremented
+int reuse_memory_distance_metric_id = -1; // use Loads+stores to reprent the reuse distance
+int reuse_memory_distance_count_metric_id = -1; // how many times reuse_memory_distance_metric is incremented
+int reuse_buffer_metric_ids[2] = {-1, -1}; // used to store temporal data for reuse client
+int reuse_store_buffer_metric_id = -1; // store the last time we get an available value of stores
+
 
 int false_ww_metric_id = -1;
 int false_rw_metric_id = -1;
@@ -157,7 +161,6 @@ int true_rw_metric_id = -1;
 int true_wr_metric_id = -1;
 
 
-extern int reuse_cacheline_distance_event_index;
 extern int linux_perf_sample_source_index;
 extern int *linux_perf_reading_events;
 extern int linux_perf_num_reading_events;
@@ -911,23 +914,28 @@ METHOD_FN(process_event_list, int lush_metrics)
 
         case WP_REUSE:
             {
-            //set up the trace output
-            //char file_name[PATH_MAX];
-            //int ret = snprintf(file_name, PATH_MAX, "%s-%d.reuse.hpcrun", hpcrun_get_executable_name(), TD_GET(core_profile_trace_data.id));
-            //int fd = open(str, O_WRONLY | O_CREAT | O_EXCL, 0644);
-            //assert(fd > 0);
-            //hpcio_outbuf_attach(&(TD_GET(witch_client_trace_output)), fd, hpcrun_malloc(1<<10), 1<<10, HPCIO_OUTBUF_UNLOCKED);
 
             temporal_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(temporal_reuse_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            #if 0
             spatial_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(spatial_reuse_metric_id, "SPATIAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            #endif
+            reuse_memory_distance_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_memory_distance_metric_id, "MEMORY_DISTANCE_SUM", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            reuse_memory_distance_count_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_memory_distance_count_metric_id, "MEMORY_DISTANCE_COUNT", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_time_distance_metric_id = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(reuse_time_distance_metric_id, "TIME_DISTANCE", MetricFlags_ValFmt_Int, 1, metric_property_none);
-            reuse_cacheline_distance_metric_id = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(reuse_cacheline_distance_metric_id, "CACHELIN_DISTANCE", MetricFlags_ValFmt_Int, 1, metric_property_none);
-            reuse_trapped_metric_id = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(reuse_trapped_metric_id, "REUSE_TRAP_COUNT", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            hpcrun_set_metric_info_and_period(reuse_time_distance_metric_id, "TIME_DISTANCE_SUM", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            reuse_time_distance_count_metric_id = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_time_distance_count_metric_id, "TIME_DISTANCE_COUNT", MetricFlags_ValFmt_Int, 1, metric_property_none);
+    
+            // the next two buffers only for internal use
+            reuse_buffer_metric_ids[0] = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_buffer_metric_ids[0], "REUSE BUFFER 1", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            reuse_buffer_metric_ids[1] = hpcrun_new_metric();
+            hpcrun_set_metric_info_and_period(reuse_buffer_metric_ids[1],"REUSE BUFFER 2", MetricFlags_ValFmt_Int, 1, metric_property_none);
+
             }
             break;
         case WP_ALL_SHARING:
@@ -1171,6 +1179,30 @@ static inline void UpdateConcatenatedPathPair(void *ctxt, cct_node_t * oldNode, 
     cct_metric_data_increment(metricId, node, (cct_metric_data_t){.i = metricInc});
 }
 
+
+//possible return type: (uint64_t *) for interger, (double) for real
+static void *get_metric_data_ptr(int metric_id, cct_node_t *node){
+    if (! hpcrun_has_metric_set(node)) {
+        cct2metrics_assoc(node, hpcrun_metric_set_new());
+    }
+    metric_set_t* set = hpcrun_get_metric_set(node);
+    metric_desc_t* minfo = hpcrun_id2metric(metric_id);
+    if (!minfo) {
+        return NULL;
+    }
+    hpcrun_metricVal_t* loc = hpcrun_metric_set_loc(set, metric_id);
+    switch (minfo->flags.fields.valFmt) {
+        case MetricFlags_ValFmt_Int:
+            return (void *) &(loc->i);
+        case MetricFlags_ValFmt_Real:
+            return (void *) &(loc->r);
+        default:
+            assert(false);
+    }
+    return NULL;
+}
+
+
 static inline cct_node_t *getPreciseNode(void *ctxt, void *precise_pc, int dummyMetricId){
     // currently, we assume precise_pc + 1 = context_pc for PEBS (+1 means one instruction)
     // we want the context to point to the exact IP
@@ -1199,17 +1231,13 @@ static inline cct_node_t *getPreciseNode(void *ctxt, void *precise_pc, int dummy
     return new_node;
 }
 
-static inline void UpdateConcatenatedPathPairMultiple(cct_node_t *bottomNode, cct_node_t * topNode, const void * joinNode, int *metricIdArray, uint64_t *metricIncArray, uint32_t numMetric){
-    if (numMetric == 0) return;
 
+static inline cct_node_t *getConcatenatedNode(cct_node_t *bottomNode, cct_node_t * topNode, const void * joinNode){
     // insert a special node
     cct_node_t *node = hpcrun_insert_special_node(topNode, joinNode);
     // concatenate call paths
     node = hpcrun_cct_insert_path_return_leaf(bottomNode, node);
-    for(uint32_t i = 0; i < numMetric; i++){
-        // update the foundMetric
-        cct_metric_data_increment(metricIdArray[i], node, (cct_metric_data_t){.i = metricIncArray[i]});
-    }
+    return node;
 }
 
 
@@ -1425,83 +1453,50 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     int joinNodeIdx = wpi->sample.isSamplePointAccurate? E_ACCURATE_JOIN_NODE_IDX : E_INACCURATE_JOIN_NODE_IDX;
 
     uint64_t time_distance = rdtsc() - wpi->startTime;
-    uint64_t cacheline_distance = 0;
 
-//    fprintf(stderr, "SECOND_COUNTER:");
-            uint64_t val[2][3];
-        //uint64_t scaled;
-    //for (int i=0; i < linux_perf_num_reading_events; i++){
+    uint64_t val[2][3];
      for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
 	linux_perf_read_event_counter( linux_perf_reading_events[i], val[i]);
-	//scaled = perf_scale(val);
-//	fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
-	//cacheline_distance = perf_get_scaled_counter_delta(val, wpi->sample.cachelineReuseDistance);
-	//cacheline_distance = val[1] - wpi->sample.cachelineReuseDistance[1];
-#if 0
-	if (val[1] - wpi->sample.cachelineReuseDistance[1] == val[2] - wpi->sample.cachelineReuseDistance[2]){
-		cacheline_distance = val[0] - wpi->sample.cachelineReuseDistance[0];
-	}
-	else{
-		cacheline_distance = 0;
-	}
-#endif
+        for(int j=0; j < 3; j++){
+            val[i][j] -= wpi->sample.reuseDistance[i][j];
+        }
     }
-//    fprintf(stderr, "\n");
 
-#if 0
-    if (cacheline_distance < wpi->sample.cachelineReuseDistance){
-        fprintf(stderr, "HPCRUN: cacheline counter value decreased, previous %lu --> current %lu\n", wpi->sample.cachelineReuseDistance, cacheline_distance);
-        cacheline_distance = 0; // maybe set it to zero ??
-    }
-    else {
-        cacheline_distance -= wpi->sample.cachelineReuseDistance;
-    }
-#endif
-#if 0
-    if (cacheline_distance == 0){
-     fprintf(stderr, "REUSE_DISTANCE (EST): %lu (rate %lf)\n", (uint64_t)( (val[1] - wpi->sample.cachelineReuseDistance[1]) * counting_rate), counting_rate);
-       //just drop it
-    }
-    else{
-     fprintf(stderr, "REUSE_DISTANCE (ACC): %lu (rate %lf)\n", cacheline_distance,  ((double)val[0] - wpi->sample.cachelineReuseDistance[0] )/((double)val[2] - wpi->sample.cachelineReuseDistance[2]));
-    }
-#endif
-
-
-//    fprintf(stderr, "REUSE_DISTANCE: %c %lu %lu %lu\n", marker, cacheline_distance, inc, val[1] - wpi->sample.cachelineReuseDistance[1]);
-
-    //prepare the metric updating arrays
-    int metricIdArray[4];
-    uint64_t metricIncArray[4];
-
-    metricIncArray[0]=inc;
-    metricIdArray[1]=reuse_time_distance_metric_id; metricIncArray[1]=time_distance;
-    metricIdArray[2]=reuse_cacheline_distance_metric_id; metricIncArray[2]=cacheline_distance;
-    metricIdArray[3]=reuse_trapped_metric_id; metricIncArray[3]=1;
-
-    cct_node_t *reuseNode;
-    if (wpi->sample.reuseType == REUSE_TEMPORAL){
-        reuseTemporal += inc;
-        metricIdArray[0] = temporal_reuse_metric_id;
-	reuseNode =  getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
-        UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
-    }
-    else {
-        reuseSpatial += inc;
-        metricIdArray[0] = spatial_reuse_metric_id;
-        reuseNode =  getPreciseNode(wt->ctxt, wt->pc, spatial_reuse_metric_id );
-        UpdateConcatenatedPathPairMultiple(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_SPATIALLY_REUSED][joinNodeIdx] /* joinNode*/, metricIdArray, metricIncArray, 4);
-    }
+    cct_node_t *reuseNode = getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
 
 #ifdef REUSE_HISTO 
     WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
     for(int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
-
-    WriteWitchTraceOutput(" %lu %lu %lu,", val[i][0] - wpi->sample.cachelineReuseDistance[i][0],val[i][1] - wpi->sample.cachelineReuseDistance[i][1],val[i][2] - wpi->sample.cachelineReuseDistance[i][2]);
+        WriteWitchTraceOutput(" %lu %lu %lu,", val[i][0], val[i][1], val[i][2]);
     }
-//    fprintf(stderr, "\n");
     WriteWitchTraceOutput("\n");
+
+#else
+
+    cct_node_t *reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/); 
+    uint64_t obtained_val[2];
+    for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
+        uint64_t * buffer_ptr = (uint64_t *) get_metric_data_ptr(reuse_buffer_metric_ids[i], reusePairNode);
+        if (val[i][2] == 0){
+            //need to borrow value
+            obtained_val[i] = *buffer_ptr;
+        } else {
+            obtained_val[i] = perf_scale(val[i]);
+            *buffer_ptr = obtained_val[i];
+        }
+    }
+
+    if ( obtained_val[0] > 0 && obtained_val[1] > 0){ //attribute the value
+        cct_metric_data_increment(reuse_memory_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = (obtained_val[0] + obtained_val[1]) });
+        cct_metric_data_increment(reuse_memory_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
+    }
+    
+    reuseTemporal += inc;
+    cct_metric_data_increment(temporal_reuse_metric_id, reusePairNode, (cct_metric_data_t){.i = inc});
+    cct_metric_data_increment(reuse_time_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = time_distance});
+    cct_metric_data_increment(reuse_time_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1}); 
 #endif
+
 
     return ALREADY_DISABLED;
 }
@@ -2474,17 +2469,14 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 .isBackTrace = false,
             };
 #ifdef REUSE_HISTO
-            sd.wpLength = 4;
+            sd.wpLength = 1;
 #else
             sd.wpLength = GetFloorWPLength(accessLen);
 #endif
 
 
-#ifdef REUSE_HISTO
-            if (0)
-#else
+#if 0 //spatial reuse.. currently we don't need it
             if (rdtsc() & 1)// 50% chance to detect spatial reuse
-#endif
             {
                 int wpSizes[] = {8, 4, 2, 1};
                 FalseSharingLocs falseSharingLocs[CACHE_LINE_SZ];
@@ -2511,7 +2503,9 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 sd.va = aligned_pc + (r * accessLen);
 #endif
             }
-            else { // 50% chance to detect the temporal reuse
+            else 
+#endif
+            {
 #ifdef REUSE_HISTO
                 sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ;
 #else
@@ -2524,37 +2518,14 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             }
             //make sure the following variables have been set
             assert(linux_perf_sample_source_index >= 0);
-            assert(reuse_cacheline_distance_event_index >= 0);
 
-
-            // Read the cacheline event counter
-            uint64_t cachelineCount;
-            //event_thread_t *event_thread = (event_thread_t *)TD_GET(ss_info)[linux_perf_sample_source_index].ptr;
-            //sd.cachelineReuseDistance = 0;
-#if 0
-            fprintf(stderr, "FIRST_COUNTER: 0x%lx,%lu", precisePC, rdtsc());
-            for (int i=0; i < linux_perf_num_reading_events; i++){
-                //read_event_counter(&(event_thread[ linux_perf_reading_events[i]]), &cachelineCount);
-		linux_perf_read_event_counter(linux_perf_reading_events[i], &cachelineCount, 0);
-                sd.cachelineReuseDistance += cachelineCount;
-                fprintf(stderr, " %lu", cachelineCount);
-            }
-            fprintf(stderr,"\n");
-#else
-    //fprintf(stderr, "FIRST_COUNTER(rate %lf):", counting_rate);
-    //for (int i=0; i < linux_perf_num_reading_events; i++){
-      for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
-    	uint64_t val[3];
-	//uint64_t scaled;
-	linux_perf_read_event_counter( linux_perf_reading_events[i], val);
-	//update_counting_rate(val);
-	//scaled = perf_scale(val);
-	//fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
-	memcpy(sd.cachelineReuseDistance[i], val, sizeof(uint64_t)*3);;
-    }
-    //fprintf(stderr, "\n");
-    //sd.cachelineReuseDistance = cachelineCount;
-#endif
+            // Read the reuse distance event counters
+            // We assume the reading event is load, store or both.
+          for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
+                uint64_t val[3];
+	        linux_perf_read_event_counter( linux_perf_reading_events[i], val);
+	        memcpy(sd.reuseDistance[i], val, sizeof(uint64_t)*3);;
+           }
 
             // register the watchpoint
             SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);

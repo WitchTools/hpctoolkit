@@ -219,7 +219,6 @@ static const char *event_name = "CPU_CYCLES";
 
 int *linux_perf_reading_events = NULL;
 int linux_perf_num_reading_events = -1;
-int reuse_cacheline_distance_event_index = -1;
 int linux_perf_sample_source_index = -1;
 
 //******************************************************************************
@@ -859,7 +858,6 @@ METHOD_FN(process_event_list, int lush_metrics)
     /******** For witch client WP_REUSE ***************/
     if (threshold == 0){
       linux_perf_reading_events[linux_perf_num_reading_events++] = i;
-      reuse_cacheline_distance_event_index = i;
       linux_perf_sample_source_index = self->sel_idx;
     }
     /**************************************************/
