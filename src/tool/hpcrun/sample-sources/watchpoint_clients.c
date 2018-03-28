@@ -142,6 +142,7 @@ int load_metric_id = -1;
 int dead_metric_id = -1;
 int measured_metric_id = -1;
 int latency_metric_id = -1;
+int latency_miss_load_metric_id = -1;
 
 int temporal_reuse_metric_id = -1;
 int spatial_reuse_metric_id = -1;
@@ -152,7 +153,6 @@ int reuse_memory_distance_count_metric_id = -1; // how many times reuse_memory_d
 int reuse_buffer_metric_ids[2] = {-1, -1}; // used to store temporal data for reuse client
 int reuse_store_buffer_metric_id = -1; // store the last time we get an available value of stores
 
-
 int false_ww_metric_id = -1;
 int false_rw_metric_id = -1;
 int false_wr_metric_id = -1;
@@ -161,9 +161,9 @@ int true_rw_metric_id = -1;
 int true_wr_metric_id = -1;
 
 
-extern int linux_perf_sample_source_index;
-extern int *linux_perf_reading_events;
-extern int linux_perf_num_reading_events;
+int reuse_distance_events[2] = {-1, -1};
+int reuse_distance_num_events = 0;
+
 
 static inline uint64_t perf_scale(uint64_t *values) { //jqswang
   uint64_t res = 0;
@@ -615,8 +615,8 @@ static void ClientTermination(){
             //fprintf(stderr, "FINAL_COUNTING:");
             WriteWitchTraceOutput("FINAL_COUNTING:");
 
-    	for (int i=0; i < MIN(2,linux_perf_num_reading_events); i++){
-	    linux_perf_read_event_counter( linux_perf_reading_events[i], val);
+    	for (int i=0; i < MIN(2,reuse_distance_num_events); i++){
+	    linux_perf_read_event_counter(reuse_distance_events[i], val);
 	    //fprintf(stderr, " %lu %lu %lu,", val[0], val[1], val[2]);//jqswang
         WriteWitchTraceOutput(" %lu %lu %lu,", val[0], val[1], val[2]);
          }
@@ -1440,12 +1440,13 @@ static WPTriggerActionType RedStoreWPCallback(WatchPointInfo_t *wpi, int startOf
 }
 
 static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffset, int safeAccessLen, WatchPointTrigger_t * wt){
+#if 0  // jqswang:TODO, how to handle it?
     if(!wt->pc) {
         // if the ip is 0, let's drop the WP
         //return RETAIN_WP;
         return ALREADY_DISABLED;
     }
-
+#endif //jqswang
     // Report a reuse
     double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
     uint64_t numDiffSamples = GetWeightedMetricDiffAndReset(wpi->sample.node, wpi->sample.sampledMetricId, myProportion);
@@ -1455,18 +1456,19 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     uint64_t time_distance = rdtsc() - wpi->startTime;
 
     uint64_t val[2][3];
-     for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
-	linux_perf_read_event_counter( linux_perf_reading_events[i], val[i]);
-        for(int j=0; j < 3; j++){
+     for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
+	linux_perf_read_event_counter( reuse_distance_events[i], val[i]);
+        //fprintf(stderr, "VAL %lu %lu %lu\n", val[i][0], val[i][1], val[i][2]);  
+      for(int j=0; j < 3; j++){
             val[i][j] -= wpi->sample.reuseDistance[i][j];
-        }
+      }
     }
 
     cct_node_t *reuseNode = getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
 
 #ifdef REUSE_HISTO 
     WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
-    for(int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
+    for(int i=0; i < MIN(2, reuse_distance_num_events); i++){
         WriteWitchTraceOutput(" %lu %lu %lu,", val[i][0], val[i][1], val[i][2]);
     }
     WriteWitchTraceOutput("\n");
@@ -2507,7 +2509,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
 #endif
             {
 #ifdef REUSE_HISTO
-                sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ;
+                sd.va = data_addr;//sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ;
 #else
                 sd.va = data_addr;
 #endif
@@ -2516,14 +2518,13 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             if (!IsValidAddress(sd.va, precisePC)) {
                 goto ErrExit; // incorrect access type
             }
-            //make sure the following variables have been set
-            assert(linux_perf_sample_source_index >= 0);
 
             // Read the reuse distance event counters
             // We assume the reading event is load, store or both.
-          for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
+          for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
                 uint64_t val[3];
-	        linux_perf_read_event_counter( linux_perf_reading_events[i], val);
+	        linux_perf_read_event_counter( reuse_distance_events[i], val);
+                //fprintf(stderr, "USE %lu %lu %lu\n", val[0], val[1], val[2]);
 	        memcpy(sd.reuseDistance[i], val, sizeof(uint64_t)*3);;
            }
 

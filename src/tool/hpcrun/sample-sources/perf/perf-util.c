@@ -317,10 +317,8 @@ perf_attr_init(
 
   attr->sample_period = threshold;          /* Period or frequency of sampling     */
  
-  //jqswang
-  if (threshold == 0){
-    attr->read_format = PERF_FORMAT_TOTAL_TIME_ENABLED|PERF_FORMAT_TOTAL_TIME_RUNNING;
-  }
+  // It enables that we can directly read the value of the event counter via file descriptor
+  attr->read_format = PERF_FORMAT_TOTAL_TIME_ENABLED|PERF_FORMAT_TOTAL_TIME_RUNNING;
 
   int max_sample_rate = perf_max_sample_rate();
 

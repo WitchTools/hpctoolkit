@@ -217,9 +217,6 @@ static const char *event_name = "CPU_CYCLES";
 // global variables
 //******************************************************************************
 
-int *linux_perf_reading_events = NULL;
-int linux_perf_num_reading_events = -1;
-int linux_perf_sample_source_index = -1;
 
 //******************************************************************************
 // local variables
@@ -476,6 +473,8 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
       *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t) {.r=counter}, 0/*skipInner*/, 0/*isSync*/, &info);
       extern int latency_metric_id;
       cct_metric_data_increment(latency_metric_id, sv->sample_node, (cct_metric_data_t){.i = mmap_data->weight});
+      extern int latency_miss_load_metric_id;
+      cct_metric_data_increment(latency_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
     }
   }
   else {
@@ -503,43 +502,13 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     }
     hpcrun_clear_handling_sample(td);
 #endif
-#if 0 //for debugging
-    fprintf(stderr, "COUNTER:");
-    for (int i=0; i < linux_perf_num_reading_events; i++){
-        uint64_t tmp_counter;
-	linux_perf_read_event_counter(linux_perf_reading_events[i], &tmp_counter, 1 /* is scaled*/);
-        fprintf(stderr, " %lu", tmp_counter);
-    }
-    fprintf(stderr, "\n");
-#endif
   if(WatchpointClientActive()){
     OnSample(mmap_data,
              hpcrun_context_pc(context),
              sv->sample_node,
              current->event->metric);
   }
-  else {
-#if 0
-    fprintf(stderr, "COUNTER:");
-    for (int i=0; i < linux_perf_num_reading_events; i++){
-        uint64_t tmp_counter;
-        linux_perf_read_event_counter(linux_perf_reading_events[i], &tmp_counter, 1 /* is scaled*/);
-        fprintf(stderr, " %lu", tmp_counter);
-    }
-    fprintf(stderr, "\n");
 
-    fprintf(stderr, "COUNTER:");
-    for (int i=0; i < linux_perf_num_reading_events; i++){
-        uint64_t val[3];
-        uint64_t scaled;
-        linux_perf_read_event_counter_full( linux_perf_reading_events[i], val);
-        scaled = perf_scale(val);
-        fprintf(stderr," %lu,%lu,%lu,%lu", val[0], val[1], val[2], scaled);
-    }
-    fprintf(stderr, "\n");
-#endif
-
-  }
   return sv;
 }
 
@@ -787,8 +756,6 @@ METHOD_FN(process_event_list, int lush_metrics)
 
   size_t size = sizeof(event_info_t) * num_events;
   event_desc = (event_info_t*) hpcrun_malloc(size);
-  linux_perf_reading_events = (int *) hpcrun_malloc(sizeof(int) * num_events);
-  linux_perf_num_reading_events = 0; 
   if (event_desc == NULL) {
 	  EMSG("Unable to allocate %d bytes", size);
 	  return;
@@ -855,13 +822,16 @@ METHOD_FN(process_event_list, int lush_metrics)
     // set the metric for this perf event
     event_desc[i].metric = hpcrun_new_metric();
 
+
     /******** For witch client WP_REUSE ***************/
-    if (threshold == 0){
-      linux_perf_reading_events[linux_perf_num_reading_events++] = i;
-      linux_perf_sample_source_index = self->sel_idx;
+    if (strstr(name, "MEM_UOPS_RETIRED") != NULL){
+        extern int *reuse_distance_events;
+        extern int reuse_distance_num_events;
+        reuse_distance_events[reuse_distance_num_events++] = i;
     }
     /**************************************************/
    
+
     // ------------------------------------------------------------
     // if we use frequency (event_type=1) then the period is not deterministic,
     // it can change dynamically. In this case, the period is 1
@@ -879,6 +849,9 @@ METHOD_FN(process_event_list, int lush_metrics)
       extern int latency_metric_id;
       latency_metric_id = hpcrun_new_metric();
       hpcrun_set_metric_info_and_period(latency_metric_id, "LATENCY", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+      extern int latency_miss_load_metric_id;
+      latency_miss_load_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_miss_load_metric_id, "CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
     }
 
     if (m == NULL) {
@@ -1037,6 +1010,11 @@ void linux_perf_events_resume(){
 int linux_perf_read_event_counter(int event_index, uint64_t *val){
   sample_source_t *self = &obj_name();
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
+
+  // check whether it is a overflow counter
+ //jqswang: TODO
+  
+
   return perf_read_event_counter(&(event_thread[event_index]), val);
 }
 
