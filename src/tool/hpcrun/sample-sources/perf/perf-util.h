@@ -166,7 +166,7 @@ typedef struct event_thread_s {
   pe_mmap_t    *mmap;  // mmap buffer
   int          fd;     // file descriptor of the event
   event_info_t *event; // pointer to main event description
-
+  uint64_t num_overflows; // record how many times this event has overflowed
 } event_thread_t;
 
 

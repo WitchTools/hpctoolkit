@@ -311,6 +311,7 @@ perf_init()
 static bool
 perf_thread_init(event_info_t *event, event_thread_t *et)
 {
+  et->num_overflows = 0;
   et->event = event;
   // ask sys to "create" the event
   // it returns -1 if it fails.
@@ -1006,16 +1007,30 @@ void linux_perf_events_resume(){
   perf_start_all(nevents, event_thread);
 }
 
-// val is a uint64_t array and has at least 3 elements
+// OUTPUT: val, it is a uint64_t array and has at least 3 elements.
+// For a counting event, val[0] is the actual value read from counter; val[1] is the time enabling; val[2] is time running
+// For a overflow event, val[0] is the actual scaled value; val[1] and val[2] are set to 0
+// RETURN: 0, sucess; -1, error
 int linux_perf_read_event_counter(int event_index, uint64_t *val){
   sample_source_t *self = &obj_name();
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
 
-  // check whether it is a overflow counter
- //jqswang: TODO
+  event_thread_t *current = &(event_thread[event_index]);
   
+  int ret = perf_read_event_counter(current, val);
+  if (ret < 0) return -1; // something wrong here
 
-  return perf_read_event_counter(&(event_thread[event_index]), val);
+  uint64_t sample_period = current->event->attr.sample_period;
+  if (sample_period == 0){ // counting event
+    return 0;
+  } else {
+    // overflow event
+    uint64_t scaled_val = perf_scale(val);
+    val[0] = current->num_overflows * sample_period + (sample_period - scaled_val);
+    val[1] = 0;
+    val[2] = 0;
+    return 0;
+  }
 }
 
 
@@ -1114,6 +1129,10 @@ perf_event_handler(
 
     return 1; // tell monitor the signal has not been handled.
   }
+
+  // Increment the number of overflows for the current event 
+  current->num_overflows++;
+
 
   // ----------------------------------------------------------------------------
   // parse the buffer until it finishes reading all buffers
