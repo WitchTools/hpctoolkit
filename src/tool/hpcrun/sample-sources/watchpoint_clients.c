@@ -161,39 +161,8 @@ int true_rw_metric_id = -1;
 int true_wr_metric_id = -1;
 
 
-int reuse_distance_events[2] = {-1, -1};
+int *reuse_distance_events = NULL;
 int reuse_distance_num_events = 0;
-
-
-static inline uint64_t perf_scale(uint64_t *values) { //jqswang
-  uint64_t res = 0;
-
-  if (!values[2] && !values[1] && values[0]) {
-    fprintf(stderr,"WARNING: time_running = 0 = time_enabled, raw count not zero\n");
-  }
-  if (values[2] > values[1]) {
-    fprintf(stderr, "WARNING: time_running > time_enabled\n");
-  }
-  if (values[2]) {
-    res = (uint64_t)((double)values[0] * values[1]/values[2]);
-  }
-  return res;
-}
-
-uint64_t old_values[3] = {0,0,0};
-double counting_rate = 0.0;
-static inline void update_counting_rate(uint64_t *values){ //jqswang
-  if ( values[2] == old_values[2]){
-    //fprintf(stderr, "HPCRUN: WARNING: the sampling rate is too high for the multiplexed events\n");
-    return;
-  }
-  counting_rate = ((double)(values[0] - old_values[0])) / (values[2] - old_values[2]);
-  memcpy(old_values, values, sizeof(uint64_t)*3);
-
-}
-
-
-
 #define NUM_WATERMARK_METRICS (4)
 int curWatermarkId = 0;
 int watermark_metric_id[NUM_WATERMARK_METRICS] = {-1, -1, -1, -1};
@@ -1458,7 +1427,8 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     uint64_t val[2][3];
      for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
 	linux_perf_read_event_counter( reuse_distance_events[i], val[i]);
-        //fprintf(stderr, "VAL %lu %lu %lu\n", val[i][0], val[i][1], val[i][2]);  
+        //fprintf(stderr, "USE: %lu %lu %lu,  REUSE: %lu %lu %lu\n", wpi->sample.reuseDistance[i][0], wpi->sample.reuseDistance[i][1], wpi->sample.reuseDistance[i][2], val[i][0], val[i][1], val[i][2]);  
+       //fprintf(stderr, "DIFF: %lu\n", val[i][0] - wpi->sample.reuseDistance[i][0]);
       for(int j=0; j < 3; j++){
             val[i][j] -= wpi->sample.reuseDistance[i][j];
       }
@@ -2508,11 +2478,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             else 
 #endif
             {
-#ifdef REUSE_HISTO
-                sd.va = data_addr;//sd.va = (void *)(( (uint64_t)data_addr >> 2) << 2) ;
-#else
                 sd.va = data_addr;
-#endif
                 sd.reuseType = REUSE_TEMPORAL;
             }
             if (!IsValidAddress(sd.va, precisePC)) {
@@ -2524,10 +2490,11 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
           for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
                 uint64_t val[3];
 	        linux_perf_read_event_counter( reuse_distance_events[i], val);
-                //fprintf(stderr, "USE %lu %lu %lu\n", val[0], val[1], val[2]);
-	        memcpy(sd.reuseDistance[i], val, sizeof(uint64_t)*3);;
+                //fprintf(stderr, "USE %lu %lu %lu  -- ", val[0], val[1], val[2]);
+	        //fprintf(stderr, "USE %lx -- ", val[0]);
+                memcpy(sd.reuseDistance[i], val, sizeof(uint64_t)*3);;
            }
-
+            //fprintf(stderr, "\n");
             // register the watchpoint
             SubscribeWatchpoint(&sd, OVERWRITE, false /* capture value */);
         }

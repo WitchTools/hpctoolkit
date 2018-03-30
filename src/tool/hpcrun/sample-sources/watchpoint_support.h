@@ -83,7 +83,7 @@ typedef enum ReplacementPolicy {AUTO, EMPTY_SLOT_ONLY, OLDEST, NEWEST} Replaceme
 typedef enum MergePolicy {AUTO_MERGE, NO_MERGE, CLIENT_ACTION} MergePolicy;
 typedef enum OverwritePolicy {OVERWRITE, NO_OVERWRITE} OverwritePolicy;
 typedef enum VictimType {EMPTY_SLOT, NON_EMPTY_SLOT, NONE_AVAILABLE} VictimType;
-typedef enum WPTriggerActionType {DISABLE_WP, ALREADY_DISABLED, DISABLE_ALL_WP, RETAIN_WP} WPTriggerActionType; //jqswang: what do they mean?
+typedef enum WPTriggerActionType {DISABLE_WP, ALREADY_DISABLED, DISABLE_ALL_WP, RETAIN_WP} WPTriggerActionType;
 typedef enum ReuseType { REUSE_TEMPORAL, REUSE_SPATIAL} ReuseType; // for reuse client
 
 // Data structure that is given by clients to set a WP

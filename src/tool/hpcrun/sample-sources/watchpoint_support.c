@@ -206,9 +206,7 @@ static void InitConfig(){
     } else {
         wpConfig.isLBREnabled = false;
     }
-   // jqswang:TODO  HACK HACK  March/27 debugiing with Qingsen
-// FIXME:
-        wpConfig.isLBREnabled = false;
+    wpConfig.isLBREnabled = false; //jqswang: TODO
     CHECK(close(fd));
     
     
@@ -377,6 +375,7 @@ void ReuseWPConfigOverride(void *v){
     // dont fix IP
     wpConfig.dontFixIP = true;
     wpConfig.dontDisassembleWPAddress = true;
+    wpConfig.isLBREnabled = false; //jqswang
 }
 
 static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, bool modify) {
@@ -458,10 +457,8 @@ static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, 
         wpi->fileHandle = perf_fd;
         // mmap the file if lbr is enabled
         //if(wpConfig.isLBREnabled) {
-        //jqswang: TODO
-        if(1 /* FIXME: HACK HACK March/27 debugging with qingsen*/) {
             wpi->mmapBuffer = MAPWPMBuffer(perf_fd);
-        }
+        //}
     }
     
     wpi->isActive = true;

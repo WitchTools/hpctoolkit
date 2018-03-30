@@ -763,6 +763,16 @@ METHOD_FN(process_event_list, int lush_metrics)
   }
   memset(event_desc, 0, size);
 
+  extern int *reuse_distance_events;
+  extern int reuse_distance_num_events;
+  reuse_distance_events = (int *) hpcrun_malloc(sizeof(int) * num_events);
+  reuse_distance_num_events = 0;
+  if (reuse_distance_events == NULL){
+      EMSG("Unable to allocate %d bytes", sizeof(int)*num_events);
+      return;
+  }
+
+
   int i=0;
 
   default_threshold = init_default_count();
@@ -826,8 +836,6 @@ METHOD_FN(process_event_list, int lush_metrics)
 
     /******** For witch client WP_REUSE ***************/
     if (strstr(name, "MEM_UOPS_RETIRED") != NULL){
-        extern int *reuse_distance_events;
-        extern int reuse_distance_num_events;
         reuse_distance_events[reuse_distance_num_events++] = i;
     }
     /**************************************************/
@@ -971,16 +979,40 @@ restart_perf_event(int fd)
     TMSG(LINUX_PERF, "Unable to start event: fd is not valid");
     return -1;
   }
+#if 0 //jqswang
+    uint64_t val[3];
+    read(fd, val, sizeof(uint64_t)*3);
+    //fprintf(stderr, "Before RESET %lx %lx %lx\n", val[0], val[1], val[2]);
+    fprintf(stderr, "Before RESET1 %lx\n", val[0]);
 
+    for(volatile int i=0; i< 1000; i++);
+    read(fd, val, sizeof(uint64_t)*3);
+     fprintf(stderr, "Before RESET2 %lx\n", val[0]);
+#endif
   int ret = ioctl(fd, PERF_EVENT_IOC_RESET, 0);
   if (ret == -1) {
     TMSG(LINUX_PERF, "error fd %d in PERF_EVENT_IOC_RESET: %s", fd, strerror(errno));
   }
 
+#if 0 //jqsang
+    read(fd, val, sizeof(uint64_t)*3);
+    //fprintf(stderr, "AFTER RESET %lx %lx %lx\n", val[0], val[1], val[2]);
+    fprintf(stderr, "AFTER RESET %lx\n", val[0]);
+#endif
+
   ret = ioctl(fd, PERF_EVENT_IOC_REFRESH, 1);
   if (ret == -1) {
     TMSG(LINUX_PERF, "error fd %d in IOC_REFRESH: %s", fd, strerror(errno));
   }
+  //jqswang
+#if 0
+  for(volatile int i=0; i< 1000; i++);
+    ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+  uint64_t val[3];
+  ret = read(fd, val, sizeof(uint64_t) * 3 );
+  fprintf(stderr, "After DISABLE %lx %lx %lx\n", val[0], val[1], val[2]);
+  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+#endif
   return ret;
 }
 /***************************************************************************
@@ -1025,8 +1057,16 @@ int linux_perf_read_event_counter(int event_index, uint64_t *val){
     return 0;
   } else {
     // overflow event
-    uint64_t scaled_val = perf_scale(val);
-    val[0] = current->num_overflows * sample_period + (sample_period - scaled_val);
+    //fprintf(stderr, "DEBUG: %lu, %lu %lu %lu\n", sample_period, val[0],val[1],val[2]);
+    //uint64_t scaled_val = perf_scale(val);
+    assert(val[1] == val[2]); //jqswang: TODO: I have no idea how to calculate the value under multiplexing for overflow event.
+    int64_t scaled_val = (int64_t) val[0] ;//% sample_period;
+    if (scaled_val >= sample_period  || scaled_val < 0){ //jqswang: TODO: it does not filter out all the invalid values
+        scaled_val = 0;
+    }
+    //fprintf(stderr, "%s: %lu, %lu %lu %lu ->", current->event->metric_desc->name, current->num_overflows, val[0],val[1],val[2]);
+    val[0] = current->num_overflows * sample_period + scaled_val;
+    //fprintf(stderr, " %lu\n", val[0]);
     val[1] = 0;
     val[2] = 0;
     return 0;
@@ -1154,10 +1194,22 @@ perf_event_handler(
       record_sample(current, &mmap_data, context, &sv);
 
     kernel_block_handler(current, sv, &mmap_data);
-
-  } while (more_data);
+     } while (more_data);
 
   hpcrun_safe_exit();
+#if  0//jqswang
+        uint64_t val[3];
+    read(fd, val, sizeof(uint64_t)*3);
+    //fprintf(stderr, "Before RESET %lx %lx %lx\n", val[0], val[1], val[2]);
+    //fprintf(stderr, "Before RESTART %s %lx\n", current->event->metric_desc->name,val[0]);
+    extern int reuse_distance_num_events;
+    extern int *reuse_distance_events;
+    for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
+                //linux_perf_read_event_counter( reuse_distance_events[i], val);
+        //fprintf(stderr, "READING %lx [%lu] ---", val[0], );
+    }
+    //fprintf(stderr,"\n");
+#endif
 
   restart_perf_event(fd);
 
