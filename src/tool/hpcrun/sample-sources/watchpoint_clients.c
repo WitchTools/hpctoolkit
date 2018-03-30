@@ -168,6 +168,22 @@ int curWatermarkId = 0;
 int watermark_metric_id[NUM_WATERMARK_METRICS] = {-1, -1, -1, -1};
 int pebs_metric_id[NUM_WATERMARK_METRICS] = {-1, -1, -1, -1};
 
+static inline uint64_t perf_scale(uint64_t *values) { //jqswang
+  uint64_t res = 0;
+
+  if (!values[2] && !values[1] && values[0]) {
+    fprintf(stderr,"WARNING: time_running = 0 = time_enabled, raw count not zero\n");
+  }
+  if (values[2] > values[1]) {
+    fprintf(stderr, "WARNING: time_running > time_enabled\n");
+  }
+  if (values[2]) {
+    res = (uint64_t)((double)values[0] * values[1]/values[2]);
+  }
+  return res;
+}
+
+
 void SetupWatermarkMetric(int metricId){
     if (curWatermarkId == NUM_WATERMARK_METRICS) {
         EEMSG("curWatermarkId == NUM_WATERMARK_METRICS = %d", NUM_WATERMARK_METRICS);
@@ -1447,7 +1463,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
 
     cct_node_t *reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/); 
     uint64_t obtained_val[2];
-    for (int i=0; i < MIN(2, linux_perf_num_reading_events); i++){
+    for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
         uint64_t * buffer_ptr = (uint64_t *) get_metric_data_ptr(reuse_buffer_metric_ids[i], reusePairNode);
         if (val[i][2] == 0){
             //need to borrow value
