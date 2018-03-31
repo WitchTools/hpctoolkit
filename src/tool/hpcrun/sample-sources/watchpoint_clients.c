@@ -163,6 +163,12 @@ int true_wr_metric_id = -1;
 
 int *reuse_distance_events = NULL;
 int reuse_distance_num_events = 0;
+#ifdef REUSE_HISTO
+#else
+AccessType reuse_monitor_type = LOAD_AND_STORE; // WP_REUSE: what kind of memory access can be used to subscribe the watchpoint
+WatchPointType reuse_trap_type = WP_RW; // WP_REUSE: what kind of memory access can trap the watchpoint
+#endif
+
 #define NUM_WATERMARK_METRICS (4)
 int curWatermarkId = 0;
 int watermark_metric_id[NUM_WATERMARK_METRICS] = {-1, -1, -1, -1};
@@ -899,6 +905,45 @@ METHOD_FN(process_event_list, int lush_metrics)
 
         case WP_REUSE:
             {
+#ifdef REUSE_HISTO
+#else             
+               {
+                    char * monitor_type_str = getenv("HPCRUN_WP_REUSE_MONITOR_TYPE");
+                    if(monitor_type_str){
+                        if(0 == strcasecmp(monitor_type_str, "LOAD")) {
+                            reuse_monitor_type = LOAD;
+                        } else if (0 == strcasecmp(monitor_type_str, "STORE")) {
+                            reuse_monitor_type = STORE;
+                         } else if (0 == strcasecmp(monitor_type_str, "LS") || 0 == strcasecmp(monitor_type_str, "ALL") ) {
+                            reuse_monitor_type = LOAD_AND_STORE;
+                         } else {
+                            // default;
+                            reuse_monitor_type = LOAD_AND_STORE;
+                        }
+                    } else{
+                        // default
+                        reuse_monitor_type = LOAD_AND_STORE;
+                    }
+                }
+                {
+                    char *trap_type_str = getenv("HPCRUN_WP_REUSE_TRAP_TYPE");
+                    if(trap_type_str){
+                        if(0 == strcasecmp(trap_type_str, "LOAD")) {
+                            reuse_trap_type = WP_RW;  // NO WP_READ allowed
+                        } else if (0 == strcasecmp(trap_type_str, "STORE")) {
+                            reuse_trap_type = WP_WRITE;
+                         } else if (0 == strcasecmp(trap_type_str, "LS") || 0 == strcasecmp(trap_type_str, "ALL") ) {
+                            reuse_trap_type = WP_RW;
+                         } else {
+                            // default;
+                            reuse_trap_type = WP_RW;
+                        }
+                    } else{
+                        // default
+                        reuse_trap_type = WP_RW;
+                    }
+                }
+#endif
 
             temporal_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(temporal_reuse_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
@@ -917,9 +962,9 @@ METHOD_FN(process_event_list, int lush_metrics)
     
             // the next two buffers only for internal use
             reuse_buffer_metric_ids[0] = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(reuse_buffer_metric_ids[0], "REUSE BUFFER 1", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            hpcrun_set_metric_info_and_period(reuse_buffer_metric_ids[0], "REUSE_BUFFER_1", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_buffer_metric_ids[1] = hpcrun_new_metric();
-            hpcrun_set_metric_info_and_period(reuse_buffer_metric_ids[1],"REUSE BUFFER 2", MetricFlags_ValFmt_Int, 1, metric_property_none);
+            hpcrun_set_metric_info_and_period(reuse_buffer_metric_ids[1],"REUSE_BUFFER_2", MetricFlags_ValFmt_Int, 1, metric_property_none);
 
             }
             break;
@@ -2443,6 +2488,10 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
         }
             break;
         case WP_REUSE:{
+#ifdef REUSE_HISTO
+#else
+            if ( accessType != reuse_monitor_type && reuse_monitor_type != LOAD_AND_STORE) break;
+#endif
             long  metricThreshold = hpcrun_id2metric(sampledMetricId)->period;
             accessedIns += metricThreshold;
             SampleData_t sd= {
@@ -2460,6 +2509,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             sd.wpLength = 1;
 #else
             sd.wpLength = GetFloorWPLength(accessLen);
+            sd.type = reuse_trap_type;
 #endif
 
 
