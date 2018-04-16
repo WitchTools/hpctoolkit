@@ -167,6 +167,7 @@ int reuse_distance_num_events = 0;
 #else
 AccessType reuse_monitor_type = LOAD_AND_STORE; // WP_REUSE: what kind of memory access can be used to subscribe the watchpoint
 WatchPointType reuse_trap_type = WP_RW; // WP_REUSE: what kind of memory access can trap the watchpoint
+bool reuse_concatenate_use_reuse = false; // WP_REUSE: how to concatentate the use and reuse
 #endif
 
 #define NUM_WATERMARK_METRICS (4)
@@ -943,6 +944,15 @@ METHOD_FN(process_event_list, int lush_metrics)
                         reuse_trap_type = WP_RW;
                     }
                 }
+
+                {
+                    char *concatenate_order_str = getenv("HPCRUN_WP_REUSE_CONCATENATE_ORDER");
+                    if(concatenate_order_str && 0 == strcasecmp(concatenate_order_str, "USE_REUSE")){
+                        reuse_concatenate_use_reuse = true;         
+                    } else{
+                        reuse_concatenate_use_reuse = false;
+                    }
+                }
 #endif
 
             temporal_reuse_metric_id = hpcrun_new_metric();
@@ -1057,8 +1067,9 @@ enum JoinNodeType {
     E_KILLED=0,
     E_USED,
     E_NEW_VAL,
-    E_TEMPORALLY_REUSED,
-    E_SPATIALLY_REUSED,
+    E_TEMPORALLY_REUSED_FROM,
+    E_TEMPORALLY_REUSED_BY,
+    E_SPATIALLY_REUSED_FROM,
     E_TRUE_WW_SHARE,
     E_TRUE_WR_SHARE,
     E_TRUE_RW_SHARE,
@@ -1090,6 +1101,9 @@ static void NEW_VAL_BY_INACCURATE_PC(void) {}
 
 static void TEMPORALLY_REUSED_FROM(void) {}
 static void TEMPORALLY_REUSED_FROM_INACCURATE_PC(void) {}
+
+static void TEMPORALLY_REUSED_BY(void) {}
+static void TEMPORALLY_REUSED_BY_INACCURATE_PC(void) {}
 
 static void SPATIALLY_REUSED_FROM(void) {}
 static void SPATIALLY_REUSED_FROM_INACCURATE_PC(void) {}
@@ -1137,8 +1151,9 @@ static const void * joinNodes[][2] = {
     [E_KILLED] = GET_FUN_ADDR(KILLED_BY),
     [E_USED] = GET_FUN_ADDR(USED_BY),
     [E_NEW_VAL] = GET_FUN_ADDR(NEW_VAL_BY),
-    [E_TEMPORALLY_REUSED] = GET_FUN_ADDR(TEMPORALLY_REUSED_FROM),
-    [E_SPATIALLY_REUSED] = GET_FUN_ADDR(SPATIALLY_REUSED_FROM),
+    [E_TEMPORALLY_REUSED_FROM] = GET_FUN_ADDR(TEMPORALLY_REUSED_FROM),
+    [E_TEMPORALLY_REUSED_BY] = GET_FUN_ADDR(TEMPORALLY_REUSED_BY),
+    [E_SPATIALLY_REUSED_FROM] = GET_FUN_ADDR(SPATIALLY_REUSED_FROM),
     [E_TRUE_WW_SHARE] = GET_FUN_ADDR(TRUE_WW_SHARE),
     [E_TRUE_WR_SHARE] = GET_FUN_ADDR(TRUE_WR_SHARE),
     [E_TRUE_RW_SHARE] = GET_FUN_ADDR(TRUE_RW_SHARE),
@@ -1241,7 +1256,7 @@ static inline cct_node_t *getPreciseNode(void *ctxt, void *precise_pc, int dummy
     sample_val_t v = hpcrun_sample_callpath(ctxt, dummyMetricId, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     cct_node_t *new_node = v.sample_node;
     if (precise_pc == 0) return new_node;
-
+    //fprintf("precise_pc = %lx\n", precise_pc);
     cct_node_t *tmp_node = hpcrun_cct_parent(new_node);
     assert(tmp_node);
     if (is_same_function(hpcrun_context_pc(ctxt), precise_pc) == SAME_FN){
@@ -1495,7 +1510,9 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
       }
     }
 
-    cct_node_t *reuseNode = getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
+    //cct_node_t *reuseNode = getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
+    sample_val_t v = hpcrun_sample_callpath(wt->ctxt, temporal_reuse_metric_id, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
+    cct_node_t *reuseNode = v.sample_node;
 
 #ifdef REUSE_HISTO 
     WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
@@ -1506,7 +1523,14 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
 
 #else
 
-    cct_node_t *reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED][joinNodeIdx] /* joinNode*/); 
+    cct_node_t *reusePairNode;
+    if (reuse_concatenate_use_reuse){
+        reusePairNode = getConcatenatedNode(reuseNode /*bottomNode*/, wpi->sample.node /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_BY][joinNodeIdx] /* joinNode*/);
+    }else{
+        reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_FROM][joinNodeIdx] /* joinNode*/); 
+    }
+
+#if 0 //jqswang: currently disable the value borrowing process
     uint64_t obtained_val[2];
     for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
         uint64_t * buffer_ptr = (uint64_t *) get_metric_data_ptr(reuse_buffer_metric_ids[i], reusePairNode);
@@ -1519,11 +1543,15 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         }
     }
 
-    if ( obtained_val[0] > 0 && obtained_val[1] > 0){ //attribute the value
+    if ( obtained_val[0] > 0 && obtained_val[1] > 0)   //attribute the value
+    {
         cct_metric_data_increment(reuse_memory_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = (obtained_val[0] + obtained_val[1]) });
         cct_metric_data_increment(reuse_memory_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
     }
-    
+#else
+        cct_metric_data_increment(reuse_memory_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = (val[0][0] + val[1][0]) });
+        cct_metric_data_increment(reuse_memory_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
+#endif
     reuseTemporal += inc;
     cct_metric_data_increment(temporal_reuse_metric_id, reusePairNode, (cct_metric_data_t){.i = inc});
     cct_metric_data_increment(reuse_time_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = time_distance});

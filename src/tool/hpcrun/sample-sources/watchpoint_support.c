@@ -206,7 +206,16 @@ static void InitConfig(){
     } else {
         wpConfig.isLBREnabled = false;
     }
-    wpConfig.isLBREnabled = false; //jqswang: TODO
+    {  //jqswang: Maybe we can move this part to other better location?
+        char * lbr_flag_str = getenv("HPCRUN_WP_REUSE_LBR");
+        if (lbr_flag_str &&  0 == strcasecmp(lbr_flag_str, "ENABLE")){
+            wpConfig.isLBREnabled = true;
+            //printf(stderr,"LBR is set to TRUE\n");
+        } else {
+            wpConfig.isLBREnabled = false;
+            //fprintf(stderr,"LBR is set to FALSE\n");
+        }
+    }
     CHECK(close(fd));
     
     

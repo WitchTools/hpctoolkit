@@ -838,7 +838,7 @@ METHOD_FN(process_event_list, int lush_metrics)
 #ifdef REUSE_HISTO
     if (strstr(name, "MEM_UOPS_RETIRED") != NULL)
 #else
-    if (strstr(name, "MEM_UOPS_RETIRED") != NULL && threshold == 0)
+    if (strstr(name, "MEM_UOPS_RETIRED") != NULL) //jqswang: TODO // && threshold == 0)
 #endif
     {
         reuse_distance_events[reuse_distance_num_events++] = i;
