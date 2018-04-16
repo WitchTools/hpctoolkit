@@ -1492,23 +1492,29 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         return ALREADY_DISABLED;
     }
 #endif //jqswang
-    // Report a reuse
+
+     uint64_t val[2][3];
+     for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
+	linux_perf_read_event_counter( reuse_distance_events[i], val[i]);
+        //fprintf(stderr, "USE: %lu %lu %lu,  REUSE: %lu %lu %lu\n", wpi->sample.reuseDistance[i][0], wpi->sample.reuseDistance[i][1], wpi->sample.reuseDistance[i][2], val[i][0], val[i][1], val[i][2]);  
+       //fprintf(stderr, "DIFF: %lu\n", val[i][0] - wpi->sample.reuseDistance[i][0]);
+      for(int j=0; j < 3; j++){
+            if (val[i][j] >= wpi->sample.reuseDistance[i][j]){
+                val[i][j] -= wpi->sample.reuseDistance[i][j];
+            }
+            else { //Something wrong happens here and the record is not reliable. Drop it!
+                return ALREADY_DISABLED;
+            }
+      }
+    }
+
+   // Report a reuse
     double myProportion = ProportionOfWatchpointAmongOthersSharingTheSameContext(wpi);
     uint64_t numDiffSamples = GetWeightedMetricDiffAndReset(wpi->sample.node, wpi->sample.sampledMetricId, myProportion);
     uint64_t inc = numDiffSamples;
     int joinNodeIdx = wpi->sample.isSamplePointAccurate? E_ACCURATE_JOIN_NODE_IDX : E_INACCURATE_JOIN_NODE_IDX;
 
     uint64_t time_distance = rdtsc() - wpi->startTime;
-
-    uint64_t val[2][3];
-     for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
-	linux_perf_read_event_counter( reuse_distance_events[i], val[i]);
-        //fprintf(stderr, "USE: %lu %lu %lu,  REUSE: %lu %lu %lu\n", wpi->sample.reuseDistance[i][0], wpi->sample.reuseDistance[i][1], wpi->sample.reuseDistance[i][2], val[i][0], val[i][1], val[i][2]);  
-       //fprintf(stderr, "DIFF: %lu\n", val[i][0] - wpi->sample.reuseDistance[i][0]);
-      for(int j=0; j < 3; j++){
-            val[i][j] -= wpi->sample.reuseDistance[i][j];
-      }
-    }
 
     //cct_node_t *reuseNode = getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
     sample_val_t v = hpcrun_sample_callpath(wt->ctxt, temporal_reuse_metric_id, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
