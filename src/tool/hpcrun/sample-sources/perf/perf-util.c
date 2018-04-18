@@ -9,7 +9,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2017, Rice University
+// Copyright ((c)) 2002-2018, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -95,11 +95,17 @@ const int perf_skid_flavors = sizeof(perf_skid_precision)/sizeof(int);
 
 
 //******************************************************************************
-// local variables
+// typedef, structure or enum
 //******************************************************************************
 
 
-static uint16_t perf_kernel_lm_id;
+//******************************************************************************
+// local variables
+//******************************************************************************
+
+static uint16_t perf_kernel_lm_id = 0;
+enum perf_ksym_e ksym_status = PERF_UNDEFINED;
+static spinlock_t perf_lock = SPINLOCK_UNLOCKED;
 
 
 //******************************************************************************
@@ -111,6 +117,22 @@ static uint16_t perf_kernel_lm_id;
 //******************************************************************************
 // implementation
 //******************************************************************************
+
+static uint16_t 
+perf_get_kernel_lm_id() 
+{
+  if (ksym_status == PERF_AVAILABLE && perf_kernel_lm_id == 0) {
+    // ensure that this is initialized only once per process
+    spinlock_lock(&perf_lock);
+    if (perf_kernel_lm_id == 0) {
+      perf_kernel_lm_id = hpcrun_loadModule_add(LINUX_KERNEL_NAME);
+    }
+    spinlock_unlock(&perf_lock);
+  }
+  return perf_kernel_lm_id;
+}
+
+
 
 //----------------------------------------------------------
 // extend a user-mode callchain with kernel frames (if any)
@@ -127,11 +149,12 @@ perf_add_kernel_callchain(
   }
   perf_mmap_data_t *data = (perf_mmap_data_t*) data_aux;
   if (data->nr > 0) {
+
     // add kernel IPs to the call chain top down, which is the 
     // reverse of the order in which they appear in ips
     for (int i = data->nr - 1; i >= 0; i--) {
 
-      uint16_t lm_id = perf_kernel_lm_id;
+      uint16_t lm_id = perf_get_kernel_lm_id();
       ip_normalized_t npc = { .lm_id = lm_id, .lm_ip = data->ips[i] };
       cct_addr_t frm = { .ip_norm = npc };
       cct_node_t *child = hpcrun_cct_insert_addr(parent, &frm);
@@ -268,23 +291,6 @@ perf_max_sample_rate()
 static bool
 is_perf_ksym_available()
 {
-  enum perf_ksym_e {PERF_UNDEFINED, PERF_AVAILABLE, PERF_UNAVAILABLE} ;
-
-  // if kernel symbols are available, we will attempt to collect kernel
-  // callchains and add them to our call paths
-  static enum perf_ksym_e ksym_status = PERF_UNDEFINED;
-
-  if (ksym_status == PERF_UNDEFINED) {
-    int level = perf_kernel_syms_avail();
-
-    if (level == 0 || level == 1) {
-      hpcrun_kernel_callpath_register(perf_add_kernel_callchain);
-      perf_kernel_lm_id = hpcrun_loadModule_add(LINUX_KERNEL_NAME);
-      ksym_status = PERF_AVAILABLE;
-    } else {
-      ksym_status = PERF_UNAVAILABLE;
-    }
-  }
   return (ksym_status == PERF_AVAILABLE);
 }
 
@@ -292,6 +298,36 @@ is_perf_ksym_available()
 /*************************************************************
  * Interface API
  **************************************************************/ 
+
+void
+perf_util_init()
+{
+  // if kernel symbols are available, we will attempt to collect kernel
+  // callchains and add them to our call paths
+  // if kernel symbols are available, we will attempt to collect kernel
+  // callchains and add them to our call paths
+
+  int level = perf_kernel_syms_avail();
+
+  // perf_kernel_lm_id must be set for each process. here, we clear it 
+  // because it is too early to allocate a load module. it will be set 
+  // later, exactly once per process if ksym_status == PERF_AVAILABLE.
+  perf_kernel_lm_id = 0; 
+
+  if (level == 0 || level == 1) {
+    hpcrun_kernel_callpath_register(perf_add_kernel_callchain);
+    ksym_status = PERF_AVAILABLE;
+  } else {
+    ksym_status = PERF_UNAVAILABLE;
+  }
+}
+
+
+void
+perf_util_init_kernel_lm()
+{
+  is_perf_ksym_available();
+}
 
 //----------------------------------------------------------
 // generic default initialization for event attributes
@@ -338,7 +374,6 @@ perf_attr_init(
 
   attr->exclude_kernel = 1;
   attr->exclude_hv     = 1;
-  attr->exclude_idle   = 1;
 
   if (is_perf_ksym_available()) {
     /* Records kernel call-chain when we have privilege */
