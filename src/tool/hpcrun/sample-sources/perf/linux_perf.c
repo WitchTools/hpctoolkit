@@ -518,8 +518,6 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     }
     hpcrun_clear_handling_sample(td);
 #endif
-<<<<<<< HEAD
-=======
 
   // check whether we can get the ra_loc in each frame
   if (ENABLED(RALOC)) {
@@ -533,7 +531,6 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
   }
 
     
->>>>>>> upstream/master
   if(WatchpointClientActive()){
     OnSample(mmap_data,
              hpcrun_context_pc(context),
@@ -773,11 +770,8 @@ METHOD_FN(process_event_list, int lush_metrics)
   //  automatically. But in practice, it didn't. Not sure why.
 
   for (event = start_tok(evlist); more_tok(); event = next_tok(), num_events++);
-<<<<<<< HEAD
   
   self->evl.nevents = num_events;
-=======
->>>>>>> upstream/master
   
   // setup all requested events
   // if an event cannot be initialized, we still keep it in our list
