@@ -633,6 +633,12 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
     for(int i = 0; i < wpConfig.maxWP; i++){
         if(!tData.watchPointArray[i].isActive) {
             *location = i;
+             // Increase samplePostFull for those who survived.
+             for(int rest = 0; rest < wpConfig.maxWP; rest++){
+                 if (tData.watchPointArray[rest].isActive) {
+                     tData.watchPointArray[rest].samplePostFull++;
+                 }
+            }
             return EMPTY_SLOT;
         }
     }
@@ -692,6 +698,9 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
             
                 if(randValue <= probabilityToReplace) {
 		    *location = loc;
+                    for(int rest = i+1; rest < wpConfig.maxWP; rest++){
+                        tData.watchPointArray[slots[rest]].samplePostFull++;
+                    }
                     return NON_EMPTY_SLOT;
                 }
                 // TODO: Milind: Not sure whether I should increment samplePostFull of the remainiing slots.
