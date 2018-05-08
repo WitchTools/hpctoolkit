@@ -164,6 +164,12 @@ int true_wr_metric_id = -1;
 int *reuse_distance_events = NULL;
 int reuse_distance_num_events = 0;
 #ifdef REUSE_HISTO
+bool reuse_output_trace = false;
+double reuse_bin_start = 0;
+double reuse_bin_ratio = 0;
+uint64_t * reuse_bin_list = NULL;
+double * reuse_bin_pivot_list = NULL; // store the bin intervals
+int reuse_bin_size = 0;
 #else
 AccessType reuse_monitor_type = LOAD_AND_STORE; // WP_REUSE: what kind of memory access can be used to subscribe the watchpoint
 WatchPointType reuse_trap_type = WP_RW; // WP_REUSE: what kind of memory access can trap the watchpoint
@@ -359,7 +365,58 @@ static int WriteWitchTraceOutput(const char *fmt, ...){
     return 0;
 }
 
+#ifdef REUSE_HISTO
+void ExpandReuseBinList(){
+	// each time we double the size of reuse_bin_list
+	uint64_t *old_reuse_bin_list = reuse_bin_list;
+	double *old_reuse_bin_pivot_list = reuse_bin_pivot_list;
+	int old_reuse_bin_size = reuse_bin_size;
+	reuse_bin_size *= 2;
 
+	reuse_bin_list = hpcrun_malloc(sizeof(uint64_t) * reuse_bin_size);
+	memset(reuse_bin_list, 0, sizeof(uint64_t) * reuse_bin_size);
+	memcpy(reuse_bin_list, old_reuse_bin_list, sizeof(uint64_t) * old_reuse_bin_size);
+
+	reuse_bin_pivot_list = hpcrun_malloc(sizeof(double) * reuse_bin_size);
+	memset(reuse_bin_pivot_list, 0, sizeof(double) * reuse_bin_size);
+ 	memcpy(reuse_bin_pivot_list, old_reuse_bin_pivot_list, sizeof(double) * old_reuse_bin_size);
+	for(int i=old_reuse_bin_size; i < reuse_bin_size; i++){
+		reuse_bin_pivot_list[i] = reuse_bin_pivot_list[i-1] * reuse_bin_ratio;
+	}
+
+	//hpcrun_free(old_reuse_bin_list);
+	//hpcrun_free(old_reuse_bin_pivot_list);
+}
+
+int FindReuseBinIndex(uint64_t distance){
+
+	if (distance < reuse_bin_pivot_list[0]){
+		return 0;
+	}
+	if (distance >= reuse_bin_pivot_list[reuse_bin_size - 1]){
+		ExpandReuseBinList();
+		return FindReuseBinIndex(distance);
+	}
+
+	int left = 0, right = reuse_bin_size - 1;
+	while(left + 1 < right){
+		int mid = (left + right) / 2;
+		if ( distance < reuse_bin_pivot_list[mid]){
+			right = mid;
+		} else {
+			left = mid;
+		}
+	}
+	assert(left + 1 == right);
+	return left + 1;
+}
+
+
+void ReuseAddDistance(uint64_t distance, uint64_t inc ){
+	int index = FindReuseBinIndex(distance);
+	reuse_bin_list[index] += inc;
+}
+#endif
 
 
 /******************************************************************************
@@ -572,7 +629,7 @@ METHOD_FN(start)
     }
     td->ss_state[self->sel_idx] = START;
 #ifdef REUSE_HISTO
-    assert(OpenWitchTraceOutput()==0); 
+    assert(OpenWitchTraceOutput()==0);
 #endif
 }
 
@@ -605,8 +662,15 @@ static void ClientTermination(){
 #ifdef REUSE_HISTO
             uint64_t val[3];
             //fprintf(stderr, "FINAL_COUNTING:");
-            WriteWitchTraceOutput("FINAL_COUNTING:");
+	    if (reuse_output_trace == false){ //dump the bin info
+		WriteWitchTraceOutput("BIN_START: %lf\n", reuse_bin_start);
+		WriteWitchTraceOutput("BIN_RATIO: %lf\n", reuse_bin_ratio);
+		for(int i=0; i < reuse_bin_size; i++){
+			WriteWitchTraceOutput("BIN: %d %lu\n", i, reuse_bin_list[i]);
+		}
+	    }
 
+	    WriteWitchTraceOutput("FINAL_COUNTING:");
     	for (int i=0; i < MIN(2,reuse_distance_num_events); i++){
 	    linux_perf_read_event_counter(reuse_distance_events[i], val);
 	    //fprintf(stderr, " %lu %lu %lu,", val[0], val[1], val[2]);//jqswang
@@ -907,7 +971,60 @@ METHOD_FN(process_event_list, int lush_metrics)
         case WP_REUSE:
             {
 #ifdef REUSE_HISTO
-#else             
+		{
+			char * bin_scheme_str = getenv("HPCRUN_WP_REUSE_BIN_SCHEME");
+			if (bin_scheme_str){
+				if ( 0 == strcasecmp(bin_scheme_str, "TRACE")){
+					reuse_output_trace = true;
+				}
+				else { // it should be two numbers connected by ","
+				       // For example, 4000.0,2.0
+				       char *dup_str = strdup(bin_scheme_str);
+				       char *pos = strchr(dup_str, ',');
+				       if ( pos == NULL){
+						EEMSG("Invalid value of the environmental variable HPCRUN_WP_REUSE_BIN_SCHEME");
+						free(dup_str);
+						monitor_real_abort();
+					}
+					pos[0] = '\0';
+					pos += 1;
+
+					char *endptr;
+					reuse_bin_start = strtod(dup_str, &endptr);
+					if (reuse_bin_start <= 0.0 || reuse_bin_start == HUGE_VAL || endptr[0] != '\0'){
+						EEMSG("Invalid value of the environmental variable HPCRUN_WP_REUSE_BIN_SCHEME");
+						free(dup_str);
+						monitor_real_abort();
+					}
+					reuse_bin_ratio = strtod(pos, &endptr);
+					if (reuse_bin_ratio <= 1.0 || reuse_bin_ratio == HUGE_VAL || endptr[0] != '\0'){
+						EEMSG("Invalid value of the environmental variable HPCRUN_WP_REUSE_BIN_SCHEME");
+						free(dup_str);
+						monitor_real_abort();
+					}
+					free(dup_str);
+					printf("HPCRUN: start %lf, ratio %lf\n", reuse_bin_start, reuse_bin_ratio);
+				}
+			} else { //default
+				reuse_output_trace = false;
+				reuse_bin_start = 4000;
+				reuse_bin_ratio = 2;
+			}
+
+			if (reuse_output_trace == false){
+				reuse_bin_size = 20;
+				reuse_bin_list = hpcrun_malloc(sizeof(uint64_t)*reuse_bin_size);
+				memset(reuse_bin_list, 0, sizeof(uint64_t)*reuse_bin_size);
+				reuse_bin_pivot_list = hpcrun_malloc(sizeof(double)*reuse_bin_size);
+				reuse_bin_pivot_list[0] = reuse_bin_start;
+				for(int i=1; i < reuse_bin_size; i++){
+					reuse_bin_pivot_list[i] = reuse_bin_pivot_list[i-1] * reuse_bin_ratio;
+				}
+			}
+
+		}
+
+#else
                {
                     char * monitor_type_str = getenv("HPCRUN_WP_REUSE_MONITOR_TYPE");
                     if(monitor_type_str){
@@ -948,7 +1065,7 @@ METHOD_FN(process_event_list, int lush_metrics)
                 {
                     char *concatenate_order_str = getenv("HPCRUN_WP_REUSE_CONCATENATE_ORDER");
                     if(concatenate_order_str && 0 == strcasecmp(concatenate_order_str, "USE_REUSE")){
-                        reuse_concatenate_use_reuse = true;         
+                        reuse_concatenate_use_reuse = true;
                     } else{
                         reuse_concatenate_use_reuse = false;
                     }
@@ -969,7 +1086,7 @@ METHOD_FN(process_event_list, int lush_metrics)
             hpcrun_set_metric_info_and_period(reuse_time_distance_metric_id, "TIME_DISTANCE_SUM", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_time_distance_count_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(reuse_time_distance_count_metric_id, "TIME_DISTANCE_COUNT", MetricFlags_ValFmt_Int, 1, metric_property_none);
-    
+
             // the next two buffers only for internal use
             reuse_buffer_metric_ids[0] = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(reuse_buffer_metric_ids[0], "REUSE_BUFFER_1", MetricFlags_ValFmt_Int, 1, metric_property_none);
@@ -1496,7 +1613,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
      uint64_t val[2][3];
      for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
 	linux_perf_read_event_counter( reuse_distance_events[i], val[i]);
-        //fprintf(stderr, "USE: %lu %lu %lu,  REUSE: %lu %lu %lu\n", wpi->sample.reuseDistance[i][0], wpi->sample.reuseDistance[i][1], wpi->sample.reuseDistance[i][2], val[i][0], val[i][1], val[i][2]);  
+        //fprintf(stderr, "USE: %lu %lu %lu,  REUSE: %lu %lu %lu\n", wpi->sample.reuseDistance[i][0], wpi->sample.reuseDistance[i][1], wpi->sample.reuseDistance[i][2], val[i][0], val[i][1], val[i][2]);
        //fprintf(stderr, "DIFF: %lu\n", val[i][0] - wpi->sample.reuseDistance[i][0]);
       for(int j=0; j < 3; j++){
             if (val[i][j] >= wpi->sample.reuseDistance[i][j]){
@@ -1520,20 +1637,28 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     sample_val_t v = hpcrun_sample_callpath(wt->ctxt, temporal_reuse_metric_id, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     cct_node_t *reuseNode = v.sample_node;
 
-#ifdef REUSE_HISTO 
-    WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
-    for(int i=0; i < MIN(2, reuse_distance_num_events); i++){
-        WriteWitchTraceOutput(" %lu %lu %lu,", val[i][0], val[i][1], val[i][2]);
+#ifdef REUSE_HISTO
+    if (reuse_output_trace){
+	    WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
+	    for(int i=0; i < MIN(2, reuse_distance_num_events); i++){
+		WriteWitchTraceOutput(" %lu %lu %lu,", val[i][0], val[i][1], val[i][2]);
+	    }
+	    WriteWitchTraceOutput("\n");
+    } else{
+	uint64_t rd = 0;
+	for(int i=0; i < MIN(2, reuse_distance_num_events); i++){
+		assert(val[i][1] == 0 && val[i][2] == 0); // no counter multiplexing allowed
+		rd += val[i][0];
+	}
+	ReuseAddDistance(rd, inc);
     }
-    WriteWitchTraceOutput("\n");
-
 #else
 
     cct_node_t *reusePairNode;
     if (reuse_concatenate_use_reuse){
         reusePairNode = getConcatenatedNode(reuseNode /*bottomNode*/, wpi->sample.node /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_BY][joinNodeIdx] /* joinNode*/);
     }else{
-        reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_FROM][joinNodeIdx] /* joinNode*/); 
+        reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_FROM][joinNodeIdx] /* joinNode*/);
     }
 
 #if 0 //jqswang: currently disable the value borrowing process
@@ -1561,7 +1686,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
     reuseTemporal += inc;
     cct_metric_data_increment(temporal_reuse_metric_id, reusePairNode, (cct_metric_data_t){.i = inc});
     cct_metric_data_increment(reuse_time_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = time_distance});
-    cct_metric_data_increment(reuse_time_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1}); 
+    cct_metric_data_increment(reuse_time_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
 #endif
 
 
@@ -2575,7 +2700,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 sd.va = aligned_pc + (r * accessLen);
 #endif
             }
-            else 
+            else
 #endif
             {
                 sd.va = data_addr;

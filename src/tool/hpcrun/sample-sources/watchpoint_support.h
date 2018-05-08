@@ -60,6 +60,7 @@
 
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MAX_WP_LENGTH (8L)
 #define CACHE_LINE_SZ (64)
 #define ALIGN_TO_CACHE_LINE(addr) ((uint64_t)(addr) & (~(CACHE_LINE_SZ-1)))
