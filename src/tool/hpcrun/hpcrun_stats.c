@@ -275,70 +275,70 @@ void
 hpcrun_stats_num_insane_ip_inc(long val)
 {
   atomic_fetch_add_explicit(&num_insane_ip, val, memory_order_relaxed);
-}                
-                 
-                 
-long             
+}
+
+
+long
 hpcrun_stats_num_insane_ip(void)
-{                
+{
   return atomic_load_explicit(&num_insane_ip, memory_order_relaxed);
-}                
+}
 
 
 void
 hpcrun_stats_num_writtenBytes_inc(long val)
 {
   atomic_fetch_add_explicit(&num_writtenBytes, val, memory_order_relaxed);
-}                
-                 
+}
+
 
 void
 hpcrun_stats_num_usedBytes_inc(long val)
 {
   atomic_fetch_add_explicit(&num_usedBytes, val, memory_order_relaxed);
-}                
+}
 
 void
 hpcrun_stats_num_deadBytes_inc(long val)
 {
   atomic_fetch_add_explicit(&num_deadBytes, val, memory_order_relaxed);
-}                
+}
 
 void
 hpcrun_stats_num_newBytes_inc(long val)
 {
   atomic_fetch_add_explicit(&num_newBytes, val, memory_order_relaxed);
-}                
+}
 
 void
 hpcrun_stats_num_oldAppxBytes_inc(long val)
 {
   atomic_fetch_add_explicit(&num_oldAppxBytes, val, memory_order_relaxed);
-}   
+}
 
 void
 hpcrun_stats_num_oldBytes_inc(long val)
 {
   atomic_fetch_add_explicit(&num_oldBytes, val, memory_order_relaxed);
-}                
-             
+}
+
 void
 hpcrun_stats_num_loadedBytes_inc(long val)
 {
   atomic_fetch_add_explicit(&num_loadedBytes, val, memory_order_relaxed);
-}                
+}
 
 void
 hpcrun_stats_num_accessedIns_inc(long val)
 {
   atomic_fetch_add_explicit(&num_accessedIns, val, memory_order_relaxed);
-}            
+}
 
 void
 hpcrun_stats_num_reuseTemporal_inc(long val)
 {
   atomic_fetch_add_explicit(&num_reuseTemporal, val, memory_order_relaxed);
-}            
+}
 
 void
 hpcrun_stats_num_reuseSpatial_inc(long val)
@@ -350,26 +350,26 @@ void
 hpcrun_stats_num_latency_inc(long val)
 {
   atomic_fetch_add_explicit(&num_latency, val, memory_order_relaxed);
-}            
+}
 
 void
 hpcrun_stats_num_falseWWIns_inc(long val)
 {
   atomic_fetch_add_explicit(&num_falseWWIns, val, memory_order_relaxed);
-}            
+}
 
 
 void
 hpcrun_stats_num_falseRWIns_inc(long val)
 {
   atomic_fetch_add_explicit(&num_falseRWIns, val, memory_order_relaxed);
-}            
+}
 
 void
 hpcrun_stats_num_falseWRIns_inc(long val)
 {
   atomic_fetch_add_explicit(&num_falseWRIns, val, memory_order_relaxed);
-}            
+}
 
 void
 hpcrun_stats_num_trueWWIns_inc(long val)
@@ -391,7 +391,7 @@ hpcrun_stats_num_trueWRIns_inc(long val)
 
 
 //-----------------------------
-// samples total 
+// samples total
 //-----------------------------
 
 void
@@ -410,7 +410,7 @@ hpcrun_stats_num_samples_total(void)
 
 
 //-----------------------------
-// samples attempted 
+// samples attempted
 //-----------------------------
 
 void
@@ -429,7 +429,7 @@ hpcrun_stats_num_samples_attempted(void)
 
 
 //-----------------------------
-// samples blocked async 
+// samples blocked async
 //-----------------------------
 
 // The async blocks happen in the signal handlers, without getting to
@@ -451,7 +451,7 @@ hpcrun_stats_num_samples_blocked_async(void)
 
 
 //-----------------------------
-// samples blocked dlopen 
+// samples blocked dlopen
 //-----------------------------
 
 void

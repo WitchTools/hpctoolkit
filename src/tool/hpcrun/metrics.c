@@ -211,7 +211,7 @@ hpcrun_get_num_metrics()
       id2metric[l->id] = &(l->val);
     }
     metric_proc_tbl = (metric_upd_proc_t**) hpcrun_malloc(n_metrics * sizeof(metric_upd_proc_t*));
-    
+
     for(metric_proc_map_t* l = proc_map; l; l = l->next) {
     //    for(metric_proc_map_t* l = proc_map; l; l = l->next) {
       TMSG(METRICS_FINALIZE, "metric_proc[%d] = %p", l->id, l->proc);
@@ -233,7 +233,7 @@ hpcrun_get_num_metrics()
 
 // Finalize metrics
 
-void hpcrun_finalize_metrics() 
+void hpcrun_finalize_metrics()
 {
   hpcrun_get_num_metrics();
 }
@@ -241,7 +241,7 @@ void hpcrun_finalize_metrics()
 metric_desc_t*
 hpcrun_id2metric(int metric_id)
 {
-  hpcrun_get_num_metrics(); 
+  hpcrun_get_num_metrics();
   if ((0 <= metric_id) && (metric_id < n_metrics)) {
     return id2metric[metric_id];
   }
@@ -307,7 +307,7 @@ hpcrun_new_metric_of_kind(kind_info_t* kind)
   kind->idx++;
 
   n_metrics++;
-  
+
   //
   // No preallocation for metric_proc tbl
   //
@@ -316,7 +316,7 @@ hpcrun_new_metric_of_kind(kind_info_t* kind)
   m->id   = metric_data->id;
   m->proc = (metric_upd_proc_t*) NULL;
   proc_map = m;
-  
+
   return metric_data->id;
 }
 
@@ -326,7 +326,7 @@ hpcrun_new_metric(void)
   return hpcrun_new_metric_of_kind(current_kind);
 }
 
-metric_desc_t* 
+metric_desc_t*
 hpcrun_set_metric_info_w_fn(int metric_id, const char* name,
 			    MetricFlags_ValFmt_t valFmt, size_t period,
 			    metric_upd_proc_t upd_fn, metric_desc_properties_t prop)
@@ -377,7 +377,7 @@ hpcrun_set_metric_info_w_fn(int metric_id, const char* name,
 }
 
 
-metric_desc_t* 
+metric_desc_t*
 hpcrun_set_metric_info_and_period(int metric_id, const char* name,
 				  MetricFlags_ValFmt_t valFmt, size_t period, metric_desc_properties_t prop)
 {
@@ -454,7 +454,7 @@ hpcrun_metric_std(int metric_id, metric_set_t* set,
   switch (minfo->flags.fields.valFmt) {
     case MetricFlags_ValFmt_Int:
       if (operation == '+')
-        loc->i += val.i; 
+        loc->i += val.i;
       else if (operation == '=')
         loc->i = val.i;
       break;
@@ -479,13 +479,13 @@ hpcrun_metric_std_set(int metric_id, metric_set_t* set,
 }
 
 //
-// Given two metrics, metric_id1 and metric_id2, 
-// bump up metric_id2 to reach metric_id1 and return 
+// Given two metrics, metric_id1 and metric_id2,
+// bump up metric_id2 to reach metric_id1 and return
 // the difference between them multiplied by the period.
 //
 int
-hpcrun_get_weighted_metric_diff(int metric_id1, int metric_id2, 
-                                metric_set_t* set, cct_metric_data_t * diff, 
+hpcrun_get_weighted_metric_diff(int metric_id1, int metric_id2,
+                                metric_set_t* set, cct_metric_data_t * diff,
                                 cct_metric_data_t * diffWithPeriod)
 {
     metric_desc_t* minfo1 = hpcrun_id2metric(metric_id1);
@@ -509,7 +509,6 @@ hpcrun_get_weighted_metric_diff(int metric_id1, int metric_id2,
             diff->i = (loc1->i - loc2->i);
             break;
         case MetricFlags_ValFmt_Real:
-            //assert(loc1->r >= loc2->r); //jqswang
             if (loc1->r < loc2->r){
                 diff->r = 0;
             }

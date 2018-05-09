@@ -62,7 +62,7 @@
 #include <unistd.h>
 #include <math.h>
 
-#include <sys/syscall.h> 
+#include <sys/syscall.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -106,7 +106,7 @@
 
 #include <lib/prof-lean/hpcrun-metric.h> // prefix for metric helper
 
-#include <include/linux_info.h> 
+#include <include/linux_info.h>
 
 #ifdef ENABLE_PERFMON
 #include "perfmon-util.h"
@@ -173,36 +173,22 @@ struct event_threshold_s {
 };
 
 //******************************************************************************
-// forward declarations 
+// forward declarations
 //******************************************************************************
 
 static int
 restart_perf_event(int fd);
 
-static bool 
+static bool
 perf_thread_init(event_info_t *event, event_thread_t *et);
 
-static void 
+static void
 perf_thread_fini(int nevents, event_thread_t *event_thread);
 
-static int 
+static int
 perf_event_handler( int sig, siginfo_t* siginfo, void* context);
 
 
-static inline uint64_t perf_scale(uint64_t *values) { //jqswang
-  uint64_t res = 0;
-
-  if (!values[2] && !values[1] && values[0]) {
-    fprintf(stderr,"WARNING: time_running = 0 = time_enabled, raw count not zero\n");
-  }
-  if (values[2] > values[1]) {
-    fprintf(stderr, "WARNING: time_running > time_enabled\n");
-  }
-  if (values[2]) {
-    res = (uint64_t)((double)values[0] * values[1]/values[2]);
-  }
-  return res;
-}
 
 //******************************************************************************
 // constants
@@ -240,13 +226,30 @@ extern __thread bool hpcrun_thread_suppress_sample;
 
 
 //******************************************************************************
-// private operations 
+// private operations
 //******************************************************************************
+
+// The array values consists of three elements.
+// values[0]: raw counter value; values[1]: the time enabling; values[1]: the time running
+static inline uint64_t perf_scale(uint64_t *values) {
+  uint64_t res = 0;
+
+  if (!values[2] && !values[1] && values[0]) {
+    EMSG("WARNING: time_running = 0 = time_enabled, raw count not zero\n");
+  }
+  if (values[2] > values[1]) {
+    EMSG("WARNING: time_running > time_enabled\n");
+  }
+  if (values[2]) {
+    res = (uint64_t)((double)values[0] * values[1]/values[2]);
+  }
+  return res;
+}
 
 
 /*
  * Enable all the counters
- */ 
+ */
 static void
 perf_start_all(int nevents, event_thread_t *event_thread)
 {
@@ -258,7 +261,7 @@ perf_start_all(int nevents, event_thread_t *event_thread)
 
 /*
  * Disable all the counters
- */ 
+ */
 static void
 perf_stop_all(int nevents, event_thread_t *event_thread)
 {
@@ -286,12 +289,12 @@ perf_get_pmu_support(const char *name, struct perf_event_attr *event_attr)
 // initialization
 //----------------------------------------------------------
 
-static void 
+static void
 perf_init()
 {
   perf_mmap_init();
 
-  // initialize mask to block PERF_SIGNAL 
+  // initialize mask to block PERF_SIGNAL
   sigemptyset(&sig_mask);
   sigaddset(&sig_mask, PERF_SIGNAL);
 
@@ -321,7 +324,7 @@ perf_init()
 // initialize an event
 //  event_num: event number
 //  name: name of event (has to be recognized by perf event)
-//  threshold: sampling threshold 
+//  threshold: sampling threshold
 //----------------------------------------------------------
 static bool
 perf_thread_init(event_info_t *event, event_thread_t *et)
@@ -343,14 +346,14 @@ perf_thread_init(event_info_t *event, event_thread_t *et)
     return false;
   }
 
-  // create mmap buffer for this file 
+  // create mmap buffer for this file
   et->mmap = set_mmap(et->fd);
 
   // make sure the file I/O is asynchronous
   int flag = fcntl(et->fd, F_GETFL, 0);
   int ret  = fcntl(et->fd, F_SETFL, flag | O_ASYNC );
   if (ret == -1) {
-    EMSG("Can't set notification for event %d, fd: %d: %s", 
+    EMSG("Can't set notification for event %d, fd: %d: %s",
       event->id, et->fd, strerror(errno));
   }
 
@@ -368,7 +371,7 @@ perf_thread_init(event_info_t *event, event_thread_t *et)
   owner.pid  = syscall(SYS_gettid);
   ret = fcntl(et->fd, F_SETOWN_EX, &owner);
   if (ret == -1) {
-    EMSG("Can't set thread owner for event %d, fd: %d: %s", 
+    EMSG("Can't set thread owner for event %d, fd: %d: %s",
       event->id, et->fd, strerror(errno));
   }
 
@@ -378,7 +381,7 @@ perf_thread_init(event_info_t *event, event_thread_t *et)
 
 
 //----------------------------------------------------------
-// actions when the program terminates: 
+// actions when the program terminates:
 //  - unmap the memory
 //  - close file descriptors used by each event
 //----------------------------------------------------------
@@ -386,10 +389,10 @@ static void
 perf_thread_fini(int nevents, event_thread_t *event_thread)
 {
   for(int i=0; i<nevents; i++) {
-    if (event_thread[i].fd) 
+    if (event_thread[i].fd)
       close(event_thread[i].fd);
 
-    if (event_thread[i].mmap) 
+    if (event_thread[i].mmap)
       perf_unmmap(event_thread[i].mmap);
   }
 }
@@ -406,7 +409,7 @@ get_fd_index(int nevents, int fd, event_thread_t *event_thread)
     if (event_thread[i].fd == fd)
       return &(event_thread[i]);
   }
-  return NULL; 
+  return NULL;
 }
 
 static sample_val_t*
@@ -478,8 +481,8 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     } else {
         td->precise_pc = 0;
     }
-  
-  if ( strstr(current->event->metric_desc->name, "LATENCY_ABOVE_THRESHOLD") || strstr(current->event->metric_desc->name, "LOAD_LATENCY") ) { 
+
+  if ( strstr(current->event->metric_desc->name, "LATENCY_ABOVE_THRESHOLD") || strstr(current->event->metric_desc->name, "LOAD_LATENCY") ) {
     perf_mmap_data_src_t data_src;
     data_src.val = mmap_data->data_src;
     if ( (data_src.mem_lvl & PERF_MEM_LVL_HIT) && (data_src.mem_lvl & PERF_MEM_LVL_L1)){ // L1 HIT, ignore
@@ -530,7 +533,7 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     TMSG(RALOC, "--------------------------");
   }
 
-    
+
   if(WatchpointClientActive()){
     OnSample(mmap_data,
              hpcrun_context_pc(context),
@@ -710,7 +713,7 @@ METHOD_FN(shutdown)
   // FIXME: add component shutdown code here
 
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
-  int nevents = (self->evl).nevents; 
+  int nevents = (self->evl).nevents;
 
   perf_thread_fini(nevents, event_thread);
 
@@ -750,7 +753,7 @@ METHOD_FN(supports_event, const char *ev_str)
 }
 
 
- 
+
 // --------------------------------------------------------------------------
 // handle a list of events
 // --------------------------------------------------------------------------
@@ -770,9 +773,9 @@ METHOD_FN(process_event_list, int lush_metrics)
   //  automatically. But in practice, it didn't. Not sure why.
 
   for (event = start_tok(evlist); more_tok(); event = next_tok(), num_events++);
-  
+
   self->evl.nevents = num_events;
-  
+
   // setup all requested events
   // if an event cannot be initialized, we still keep it in our list
   //  but there will be no samples
@@ -845,7 +848,7 @@ METHOD_FN(process_event_list, int lush_metrics)
 
     // ------------------------------------------------------------
     // initialize the property of the metric
-    // if the metric's name has "CYCLES" it mostly a cycle metric 
+    // if the metric's name has "CYCLES" it mostly a cycle metric
     //  this assumption is not true, but it's quite closed
     // ------------------------------------------------------------
 
@@ -867,14 +870,14 @@ METHOD_FN(process_event_list, int lush_metrics)
         reuse_distance_events[reuse_distance_num_events++] = i;
     }
     /**************************************************/
-   
+
 
     // ------------------------------------------------------------
     // if we use frequency (event_type=1) then the period is not deterministic,
     // it can change dynamically. In this case, the period is 1
     // ------------------------------------------------------------
     if (!is_period) {
-      // using frequency : the threshold is always 1, 
+      // using frequency : the threshold is always 1,
       //                   since the period is determine dynamically
       threshold = 1;
     }
@@ -1004,40 +1007,15 @@ restart_perf_event(int fd)
     TMSG(LINUX_PERF, "Unable to start event: fd is not valid");
     return -1;
   }
-#if 0 //jqswang
-    uint64_t val[3];
-    read(fd, val, sizeof(uint64_t)*3);
-    //fprintf(stderr, "Before RESET %lx %lx %lx\n", val[0], val[1], val[2]);
-    fprintf(stderr, "Before RESET1 %lx\n", val[0]);
-
-    for(volatile int i=0; i< 1000; i++);
-    read(fd, val, sizeof(uint64_t)*3);
-     fprintf(stderr, "Before RESET2 %lx\n", val[0]);
-#endif
   int ret = ioctl(fd, PERF_EVENT_IOC_RESET, 0);
   if (ret == -1) {
     TMSG(LINUX_PERF, "error fd %d in PERF_EVENT_IOC_RESET: %s", fd, strerror(errno));
   }
 
-#if 0 //jqsang
-    read(fd, val, sizeof(uint64_t)*3);
-    //fprintf(stderr, "AFTER RESET %lx %lx %lx\n", val[0], val[1], val[2]);
-    fprintf(stderr, "AFTER RESET %lx\n", val[0]);
-#endif
-
   ret = ioctl(fd, PERF_EVENT_IOC_REFRESH, 1);
   if (ret == -1) {
     TMSG(LINUX_PERF, "error fd %d in IOC_REFRESH: %s", fd, strerror(errno));
   }
-  //jqswang
-#if 0
-  for(volatile int i=0; i< 1000; i++);
-    ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
-  uint64_t val[3];
-  ret = read(fd, val, sizeof(uint64_t) * 3 );
-  fprintf(stderr, "After DISABLE %lx %lx %lx\n", val[0], val[1], val[2]);
-  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
-#endif
   return ret;
 }
 /***************************************************************************
@@ -1073,7 +1051,7 @@ int linux_perf_read_event_counter(int event_index, uint64_t *val){
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
 
   event_thread_t *current = &(event_thread[event_index]);
-  
+
   int ret = perf_read_event_counter(current, val);
   if (ret < 0) return -1; // something wrong here
 
@@ -1082,8 +1060,6 @@ int linux_perf_read_event_counter(int event_index, uint64_t *val){
     return 0;
   } else {
     // overflow event
-    //fprintf(stderr, "DEBUG: %lu, %lu %lu %lu\n", sample_period, val[0],val[1],val[2]);
-    //uint64_t scaled_val = perf_scale(val);
     assert(val[1] == val[2]); //jqswang: TODO: I have no idea how to calculate the value under multiplexing for overflow event.
     int64_t scaled_val = (int64_t) val[0] ;//% sample_period;
     if (scaled_val >= sample_period  || scaled_val < 0){ //jqswang: TODO: it does not filter out all the invalid values
@@ -1105,8 +1081,8 @@ int linux_perf_read_event_counter(int event_index, uint64_t *val){
 
 static int
 perf_event_handler(
-  int sig, 
-  siginfo_t* siginfo, 
+  int sig,
+  siginfo_t* siginfo,
   void* context
 )
 {
@@ -1141,7 +1117,7 @@ perf_event_handler(
   // ----------------------------------------------------------------------------
 
   if (siginfo->si_code < 0) {
-    TMSG(LINUX_PERF, "signal si_code %d < 0 indicates not from kernel", 
+    TMSG(LINUX_PERF, "signal si_code %d < 0 indicates not from kernel",
          siginfo->si_code);
     perf_start_all(nevents, event_thread);
 
@@ -1177,7 +1153,7 @@ perf_event_handler(
   // ----------------------------------------------------------------------------
   // check #4:
   // check the index of the file descriptor (if we have multiple events)
-  // if the file descriptor is not on the list, we shouldn't store the 
+  // if the file descriptor is not on the list, we shouldn't store the
   // metrics. Perhaps we should throw away?
   // ----------------------------------------------------------------------------
 
@@ -1195,7 +1171,7 @@ perf_event_handler(
     return 1; // tell monitor the signal has not been handled.
   }
 
-  // Increment the number of overflows for the current event 
+  // Increment the number of overflows for the current event
   current->num_overflows++;
 
 
@@ -1220,20 +1196,6 @@ perf_event_handler(
 
     kernel_block_handler(current, sv, &mmap_data);
      } while (more_data);
-
-#if  0//jqswang
-        uint64_t val[3];
-    read(fd, val, sizeof(uint64_t)*3);
-    //fprintf(stderr, "Before RESET %lx %lx %lx\n", val[0], val[1], val[2]);
-    //fprintf(stderr, "Before RESTART %s %lx\n", current->event->metric_desc->name,val[0]);
-    extern int reuse_distance_num_events;
-    extern int *reuse_distance_events;
-    for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
-                //linux_perf_read_event_counter( reuse_distance_events[i], val);
-        //fprintf(stderr, "READING %lx [%lu] ---", val[0], );
-    }
-    //fprintf(stderr,"\n");
-#endif
 
   restart_perf_event(fd);
 

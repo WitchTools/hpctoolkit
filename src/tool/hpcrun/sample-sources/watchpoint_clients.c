@@ -181,7 +181,7 @@ int curWatermarkId = 0;
 int watermark_metric_id[NUM_WATERMARK_METRICS] = {-1, -1, -1, -1};
 int pebs_metric_id[NUM_WATERMARK_METRICS] = {-1, -1, -1, -1};
 
-static inline uint64_t perf_scale(uint64_t *values) { //jqswang
+static inline uint64_t perf_scale(uint64_t *values) {
   uint64_t res = 0;
 
   if (!values[2] && !values[1] && values[0]) {
@@ -2683,15 +2683,6 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
                 int idx = rdtsc() % numFSLocs; //randomly choose one location to monitor
                 sd.va = (void *)falseSharingLocs[idx].va;
                 sd.reuseType = REUSE_SPATIAL;
-#if 0
-                // jqswang: I am not sure what the following code does
-                // randomly protect another word in the same cache line
-                uint64_t aligned_pc = ALIGN_TO_CACHE_LINE((uint64_t)data_addr);
-                if ((rdtsc() & 1) == 0)
-                    sd.va = (void*) (aligned_pc - CACHE_LINE_SZ);
-                else
-                    sd.va = (void *) (aligned_pc + CACHE_LINE_SZ);
-#endif
 #if 0
                 int offset = ((uint64_t)data_addr - aligned_pc) / accessLen;
                 int bound = CACHE_LINE_SZ / accessLen;
