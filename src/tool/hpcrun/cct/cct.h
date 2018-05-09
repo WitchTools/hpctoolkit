@@ -177,6 +177,13 @@ extern cct_node_t* hpcrun_cct_insert_array_path_return_leaf(cct_addr_t *addr_arr
 
 // special mutator to support tracing
 extern void hpcrun_cct_persistent_id_trace_mutate(cct_node_t* x);
+// mark a node for retention as the leaf of a traced call path.
+extern void hpcrun_cct_retain(cct_node_t* x);
+
+// check if a node was marked for retention as the leaf of a traced
+// call path.
+extern int hpcrun_cct_retained(cct_node_t* x);
+
 
 // Walking functions section:
 //
