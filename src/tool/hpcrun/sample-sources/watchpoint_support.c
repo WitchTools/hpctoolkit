@@ -150,9 +150,9 @@ bool IsFSorGS(void * addr) {
 /********* OS SUPPORT ****************/
 
 // perf-util.h has it
-//static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
-//    return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
-//}
+static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
+    return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
+}
 
 static pid_t gettid() {
     return syscall(__NR_gettid);
