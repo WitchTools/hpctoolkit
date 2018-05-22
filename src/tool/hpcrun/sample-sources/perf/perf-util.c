@@ -342,6 +342,7 @@ get_precise_ip(struct perf_event_attr *attr)
             THREAD_SELF, CPU_ANY,
             GROUP_FD, PERF_FLAGS);
     if (ret >= 0) {
+      close(ret);
       return val;
     }
     EMSG("The kernel does not support the requested ip-precision: %d."
