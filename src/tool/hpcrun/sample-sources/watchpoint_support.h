@@ -80,7 +80,7 @@ typedef enum AccessType {LOAD, STORE, LOAD_AND_STORE, UNKNOWN} AccessType;
 typedef enum FunctionType {SAME_FN, DIFF_FN, UNKNOWN_FN} FunctionType;
 typedef enum FloatType {ELEM_TYPE_FLOAT16, ELEM_TYPE_SINGLE, ELEM_TYPE_DOUBLE, ELEM_TYPE_LONGDOUBLE, ELEM_TYPE_LONGBCD, ELEM_TYPE_UNKNOWN} FloatType;
 typedef enum WatchPointType {WP_READ, WP_WRITE, WP_RW, WP_INVALID } WatchPointType;
-typedef enum ReplacementPolicy {AUTO, EMPTY_SLOT_ONLY, OLDEST, NEWEST, NEW_RESERVOIR} ReplacementPolicy;
+typedef enum ReplacementPolicy {AUTO, EMPTY_SLOT_ONLY, OLDEST, NEWEST} ReplacementPolicy;
 typedef enum MergePolicy {AUTO_MERGE, NO_MERGE, CLIENT_ACTION} MergePolicy;
 typedef enum OverwritePolicy {OVERWRITE, NO_OVERWRITE} OverwritePolicy;
 typedef enum VictimType {EMPTY_SLOT, NON_EMPTY_SLOT, NONE_AVAILABLE} VictimType;

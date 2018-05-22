@@ -111,7 +111,6 @@ typedef struct ThreadData{
     stack_t ss;
     void * fs_reg_val;
     void * gs_reg_val;
-    uint64_t samplePostFull;
     long numWatchpointTriggers;
     long numWatchpointImpreciseIP;
     long numWatchpointImpreciseAddressArbitraryLength;
@@ -299,8 +298,6 @@ static void InitConfig(){
     if(replacementScheme){
         if(0 == strcasecmp(replacementScheme, "AUTO")) {
             wpConfig.replacementPolicy = AUTO;
-        } else if (0 == strcasecmp(replacementScheme, "NEW_RESERVOIR")) {
-            wpConfig.replacementPolicy = NEW_RESERVOIR;
         } else if (0 == strcasecmp(replacementScheme, "OLDEST")) {
             wpConfig.replacementPolicy = OLDEST;
         } else if (0 == strcasecmp(replacementScheme, "NEWEST")) {
@@ -568,7 +565,6 @@ void WatchpointThreadInit(WatchPointUpCall_t func){
     tData.fs_reg_val = (void*)-1;
     tData.gs_reg_val = (void*)-1;
     srand48_r(time(NULL), &tData.randBuffer);
-    tData.samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
     tData.numWatchpointTriggers = 0;
     tData.numWatchpointImpreciseIP = 0;
     tData.numWatchpointImpreciseAddressArbitraryLength = 0;
@@ -633,45 +629,19 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
     for(int i = 0; i < wpConfig.maxWP; i++){
         if(!tData.watchPointArray[i].isActive) {
             *location = i;
-             // Increase samplePostFull for those who survived.
-             for(int rest = 0; rest < wpConfig.maxWP; rest++){
-                 if (tData.watchPointArray[rest].isActive) {
-                     tData.watchPointArray[rest].samplePostFull++;
-                 }
+
+            // Increase samplePostFull for those who survived.
+            for(int rest = 0; rest < wpConfig.maxWP; rest++){
+                if (tData.watchPointArray[rest].isActive) {
+                    tData.watchPointArray[rest].samplePostFull++;
+                }
             }
+
             return EMPTY_SLOT;
         }
     }
     switch (policy) {
         case AUTO:{
-            // Equal probability for any data access
-
-
-            // Randomly pick a slot to victimize.
-            long int tmpVal;
-            lrand48_r(&tData.randBuffer, &tmpVal);
-            int rSlot = tmpVal % wpConfig.maxWP;
-            *location = rSlot;
-
-            // if it is the first sample after full, use wpConfig.maxWP/(wpConfig.maxWP+1) probability to replace.
-            // if it is the second sample after full, use wpConfig.maxWP/(wpConfig.maxWP+2) probability to replace.
-            // if it is the third sample after full, use wpConfig.maxWP/(wpConfig.maxWP+3) probability replace.
-
-            double probabilityToReplace =  wpConfig.maxWP/((double)wpConfig.maxWP+tData.samplePostFull);
-            double randValue;
-            drand48_r(&tData.randBuffer, &randValue);
-
-            // update tData.samplePostFull
-            tData.samplePostFull++;
-
-            if(randValue <= probabilityToReplace) {
-                return NON_EMPTY_SLOT;
-            }
-            // this is an indication not to replace, but if the client chooses to force, they can
-            return NONE_AVAILABLE;
-        }
-            break;
-        case NEW_RESERVOIR:{
 	   // Shuffle the visit order
            int slots[MAX_WP_SLOTS];
 	   for(int i = 0; i < wpConfig.maxWP; i++)
@@ -698,12 +668,13 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
 
                 if(randValue <= probabilityToReplace) {
 		    *location = loc;
+                    // TODO: Milind: Not sure whether I should increment samplePostFull of the remainiing slots.
+                    // In Qingsen's experiments, doing this not hurt.
                     for(int rest = i+1; rest < wpConfig.maxWP; rest++){
                         tData.watchPointArray[slots[rest]].samplePostFull++;
                     }
                     return NON_EMPTY_SLOT;
                 }
-                // TODO: Milind: Not sure whether I should increment samplePostFull of the remainiing slots.
 	   }
            // this is an indication not to replace, but if the client chooses to force, they can
 	   *location = slots[0] /*random value*/;
@@ -1111,8 +1082,6 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
             if(wpi->isActive){
                 DisableWatchpointWrapper(wpi);
             }
-            //reset to tData.samplePostFull
-            tData.samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
             // Reset per WP probability
 	    wpi->samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
         }
@@ -1125,13 +1094,10 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
                 // Reset per WP probability
 	        tData.watchPointArray[i].samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
             }
-            //reset to tData.samplePostFull to SAMPLES_POST_FULL_RESET_VAL
-            tData.samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
         }
         break;
         case ALREADY_DISABLED: { // Already disabled, perhaps in pre-WP action
             assert(wpi->isActive == false);
-            tData.samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
             // Reset per WP probability
             wpi->samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
         }
