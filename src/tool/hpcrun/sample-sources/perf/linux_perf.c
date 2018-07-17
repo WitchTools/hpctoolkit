@@ -243,6 +243,7 @@ static inline uint64_t perf_scale(uint64_t *values) {
     res = (uint64_t)((double)values[0] * values[1]/values[2]);
   }
   return res;
+}
 
 /*
  * determine whether the perf sample source has been finalized for this thread
