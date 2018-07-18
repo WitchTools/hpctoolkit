@@ -504,9 +504,6 @@ perf_util_attr_init(
   attr->size   = sizeof(struct perf_event_attr); /* Size of attribute structure */
   attr->freq   = (usePeriod ? 0 : 1);
 
-  attr->precise_ip    = get_precise_ip(attr);   /* the precision is either detected automatically
-                                              as precise as possible or  on the user's variable.  */
-
   attr->sample_period = threshold;          /* Period or frequency of sampling     */
 
   // It enables that we can directly read the value of the event counter via file descriptor
@@ -540,6 +537,9 @@ perf_util_attr_init(
 #endif
     attr->exclude_kernel           = INCLUDE;
   }
+
+  attr->precise_ip    = get_precise_ip(attr);   /* the precision is either detected automatically
+                                              as precise as possible or  on the user's variable.  */
 
   return true;
 }
