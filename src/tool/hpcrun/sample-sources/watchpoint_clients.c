@@ -1661,28 +1661,10 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
         reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_FROM][joinNodeIdx] /* joinNode*/);
     }
 
-#if 0 //jqswang: currently disable the value borrowing process
-    uint64_t obtained_val[2];
-    for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
-        uint64_t * buffer_ptr = (uint64_t *) get_metric_data_ptr(reuse_buffer_metric_ids[i], reusePairNode);
-        if (val[i][2] == 0){
-            //need to borrow value
-            obtained_val[i] = *buffer_ptr;
-        } else {
-            obtained_val[i] = perf_scale(val[i]);
-            *buffer_ptr = obtained_val[i];
-        }
-    }
 
-    if ( obtained_val[0] > 0 && obtained_val[1] > 0)   //attribute the value
-    {
-        cct_metric_data_increment(reuse_memory_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = (obtained_val[0] + obtained_val[1]) });
-        cct_metric_data_increment(reuse_memory_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
-    }
-#else
-        cct_metric_data_increment(reuse_memory_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = (val[0][0] + val[1][0]) });
-        cct_metric_data_increment(reuse_memory_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
-#endif
+    cct_metric_data_increment(reuse_memory_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = (val[0][0] + val[1][0]) });
+    cct_metric_data_increment(reuse_memory_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
+
     reuseTemporal += inc;
     cct_metric_data_increment(temporal_reuse_metric_id, reusePairNode, (cct_metric_data_t){.i = inc});
     cct_metric_data_increment(reuse_time_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = time_distance});
