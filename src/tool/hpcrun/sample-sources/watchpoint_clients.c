@@ -672,7 +672,7 @@ static void ClientTermination(){
 
 	    WriteWitchTraceOutput("FINAL_COUNTING:");
     	for (int i=0; i < MIN(2,reuse_distance_num_events); i++){
-	    linux_perf_read_event_counter(reuse_distance_events[i], val);
+	    assert(linux_perf_read_event_counter(reuse_distance_events[i], val) >= 0);
 	    //fprintf(stderr, " %lu %lu %lu,", val[0], val[1], val[2]);//jqswang
         WriteWitchTraceOutput(" %lu %lu %lu,", val[0], val[1], val[2]);
          }
@@ -1612,7 +1612,7 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
 
      uint64_t val[2][3];
      for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
-	linux_perf_read_event_counter( reuse_distance_events[i], val[i]);
+	assert(linux_perf_read_event_counter( reuse_distance_events[i], val[i]) >= 0);
         //fprintf(stderr, "USE: %lu %lu %lu,  REUSE: %lu %lu %lu\n", wpi->sample.reuseDistance[i][0], wpi->sample.reuseDistance[i][1], wpi->sample.reuseDistance[i][2], val[i][0], val[i][1], val[i][2]);
        //fprintf(stderr, "DIFF: %lu\n", val[i][0] - wpi->sample.reuseDistance[i][0]);
       for(int j=0; j < 3; j++){
@@ -2705,7 +2705,7 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             // We assume the reading event is load, store or both.
           for (int i=0; i < MIN(2, reuse_distance_num_events); i++){
                 uint64_t val[3];
-	        linux_perf_read_event_counter( reuse_distance_events[i], val);
+	        assert(linux_perf_read_event_counter( reuse_distance_events[i], val) >= 0);
                 //fprintf(stderr, "USE %lu %lu %lu  -- ", val[0], val[1], val[2]);
 	        //fprintf(stderr, "USE %lx -- ", val[0]);
                 memcpy(sd.reuseDistance[i], val, sizeof(uint64_t)*3);;
