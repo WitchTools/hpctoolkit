@@ -1026,6 +1026,25 @@ METHOD_FN(process_event_list, int lush_metrics)
 
 #else
                {
+                    char * monitor_type_str = getenv("HPCRUN_WP_REUSE_TYPE");
+                    if(monitor_type_str){
+                        if(0 == strcasecmp(monitor_type_str, "TEMPORAL")) {
+                            reuse_type = REUSE_TEMPORAL;
+                        } else if (0 == strcasecmp(monitor_type_str, "SPATIAL")) {
+                            reuse_type = REUSE_SPATIAL;
+                         } else if ( 0 == strcasecmp(monitor_type_str, "ALL") ) {
+                            reuse_type = REUSE_BOTH;
+                         } else {
+                            // default;
+                            reuse_type = REUSE_BOTH;
+                        }
+                    } else{
+                        // default
+                        reuse_type = REUSE_BOTH;
+                    }
+                }
+
+               {
                     char * monitor_type_str = getenv("HPCRUN_WP_REUSE_MONITOR_TYPE");
                     if(monitor_type_str){
                         if(0 == strcasecmp(monitor_type_str, "LOAD")) {
@@ -1074,10 +1093,8 @@ METHOD_FN(process_event_list, int lush_metrics)
 
             temporal_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(temporal_reuse_metric_id, "TEMPORAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
-            #if 0
             spatial_reuse_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(spatial_reuse_metric_id, "SPATIAL", MetricFlags_ValFmt_Int, 1, metric_property_none);
-            #endif
             reuse_memory_distance_metric_id = hpcrun_new_metric();
             hpcrun_set_metric_info_and_period(reuse_memory_distance_metric_id, "MEMORY_DISTANCE_SUM", MetricFlags_ValFmt_Int, 1, metric_property_none);
             reuse_memory_distance_count_metric_id = hpcrun_new_metric();
@@ -1187,6 +1204,7 @@ enum JoinNodeType {
     E_TEMPORALLY_REUSED_FROM,
     E_TEMPORALLY_REUSED_BY,
     E_SPATIALLY_REUSED_FROM,
+    E_SPATIALLY_REUSED_BY,
     E_TRUE_WW_SHARE,
     E_TRUE_WR_SHARE,
     E_TRUE_RW_SHARE,
@@ -1224,6 +1242,9 @@ static void TEMPORALLY_REUSED_BY_INACCURATE_PC(void) {}
 
 static void SPATIALLY_REUSED_FROM(void) {}
 static void SPATIALLY_REUSED_FROM_INACCURATE_PC(void) {}
+
+static void SPATIALLY_REUSED_BY(void) {}
+static void SPATIALLY_REUSED_BY_INACCURATE_PC(void) {}
 
 static void TRUE_WW_SHARE(void) {}
 static void TRUE_WW_SHARE_INACCURATE_PC(void) {}
@@ -1271,6 +1292,7 @@ static const void * joinNodes[][2] = {
     [E_TEMPORALLY_REUSED_FROM] = GET_FUN_ADDR(TEMPORALLY_REUSED_FROM),
     [E_TEMPORALLY_REUSED_BY] = GET_FUN_ADDR(TEMPORALLY_REUSED_BY),
     [E_SPATIALLY_REUSED_FROM] = GET_FUN_ADDR(SPATIALLY_REUSED_FROM),
+    [E_SPATIALLY_REUSED_BY] = GET_FUN_ADDR(SPATIALLY_REUSED_BY),
     [E_TRUE_WW_SHARE] = GET_FUN_ADDR(TRUE_WW_SHARE),
     [E_TRUE_WR_SHARE] = GET_FUN_ADDR(TRUE_WR_SHARE),
     [E_TRUE_RW_SHARE] = GET_FUN_ADDR(TRUE_RW_SHARE),
