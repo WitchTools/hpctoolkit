@@ -604,15 +604,29 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
   if ( strstr(current->event->metric_desc->name, "LATENCY_ABOVE_THRESHOLD") || strstr(current->event->metric_desc->name, "LOAD_LATENCY") ) {
     perf_mmap_data_src_t data_src;
     data_src.val = mmap_data->data_src;
-    if ( (data_src.mem_lvl & PERF_MEM_LVL_HIT) && (data_src.mem_lvl & PERF_MEM_LVL_L1)){ // L1 HIT, ignore
-      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t){.r=counter}, 0/*skipInner*/, 0/*isSync*/, NULL);
-    }
-    else {
+
+    assert( (data_src.mem_lvl & PERF_MEM_LVL_MISS) == 0); // jqswang: Have not met PERF_MEM_LVL_MISS before. Notify me if there is one.
+
+    if ( (data_src.mem_lvl & PERF_MEM_LVL_HIT) && ( (data_src.mem_lvl & PERF_MEM_LVL_L1) == 0) ){ // L1 MISS
       *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t) {.r=counter}, 0/*skipInner*/, 0/*isSync*/, &info);
       extern int latency_metric_id;
       cct_metric_data_increment(latency_metric_id, sv->sample_node, (cct_metric_data_t){.i = mmap_data->weight});
-      extern int latency_miss_load_metric_id;
-      cct_metric_data_increment(latency_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
+      extern int latency_l1_miss_load_metric_id;
+      cct_metric_data_increment(latency_l1_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
+
+      if ( (data_src.mem_lvl & PERF_MEM_LVL_LFB) == 0) {
+        if ( (data_src.mem_lvl & PERF_MEM_LVL_L2) == 0) { // L2 miss
+	  extern int latency_l2_miss_load_metric_id;
+	  cct_metric_data_increment(latency_l2_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
+
+	  if ( (data_src.mem_lvl & PERF_MEM_LVL_L3) == 0) { // L3 miss
+	    extern int latency_l3_miss_load_metric_id;
+	    cct_metric_data_increment(latency_l3_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
+	  }
+	}
+      }
+    } else { // Otherwise (L1 HIT, Non_Available)
+      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t){.r=counter}, 0/*skipInner*/, 0/*isSync*/, &info);
     }
   }
   else {
@@ -1011,9 +1025,15 @@ METHOD_FN(process_event_list, int lush_metrics)
       extern int latency_metric_id;
       latency_metric_id = hpcrun_new_metric();
       hpcrun_set_metric_info_and_period(latency_metric_id, "LATENCY", MetricFlags_ValFmt_Int, threshold, metric_property_none);
-      extern int latency_miss_load_metric_id;
-      latency_miss_load_metric_id = hpcrun_new_metric();
-      hpcrun_set_metric_info_and_period(latency_miss_load_metric_id, "CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+      extern int latency_l1_miss_load_metric_id;
+      latency_l1_miss_load_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_l1_miss_load_metric_id, "L1_CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+      extern int latency_l2_miss_load_metric_id;
+      latency_l2_miss_load_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_l2_miss_load_metric_id, "L2_CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+      extern int latency_l3_miss_load_metric_id;
+      latency_l3_miss_load_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_l3_miss_load_metric_id, "L3_CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
     }
 
     if (m == NULL) {

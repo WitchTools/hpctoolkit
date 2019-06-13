@@ -142,7 +142,9 @@ int load_metric_id = -1;
 int dead_metric_id = -1;
 int measured_metric_id = -1;
 int latency_metric_id = -1;
-int latency_miss_load_metric_id = -1;
+int latency_l1_miss_load_metric_id = -1;
+int latency_l2_miss_load_metric_id = -1;
+int latency_l3_miss_load_metric_id = -1;
 
 int temporal_reuse_metric_id = -1;
 int spatial_reuse_metric_id = -1;
@@ -173,6 +175,7 @@ int reuse_bin_size = 0;
 #else
 AccessType reuse_monitor_type = LOAD_AND_STORE; // WP_REUSE: what kind of memory access can be used to subscribe the watchpoint
 WatchPointType reuse_trap_type = WP_RW; // WP_REUSE: what kind of memory access can trap the watchpoint
+ReuseType reuse_profile_type = REUSE_BOTH; // WP_REUSE: we want to collect temporal reuse, spatial reuse OR both?
 bool reuse_concatenate_use_reuse = false; // WP_REUSE: how to concatentate the use and reuse
 #endif
 
@@ -665,6 +668,7 @@ static void ClientTermination(){
 	    if (reuse_output_trace == false){ //dump the bin info
 		WriteWitchTraceOutput("BIN_START: %lf\n", reuse_bin_start);
 		WriteWitchTraceOutput("BIN_RATIO: %lf\n", reuse_bin_ratio);
+
 		for(int i=0; i < reuse_bin_size; i++){
 			WriteWitchTraceOutput("BIN: %d %lu\n", i, reuse_bin_list[i]);
 		}
@@ -683,7 +687,6 @@ static void ClientTermination(){
 #endif
             hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseTemporal_inc(reuseTemporal);
-            hpcrun_stats_num_accessedIns_inc(accessedIns);
             hpcrun_stats_num_reuseSpatial_inc(reuseSpatial);
          }   break;
         case WP_FALSE_SHARING:
@@ -1026,21 +1029,21 @@ METHOD_FN(process_event_list, int lush_metrics)
 
 #else
                {
-                    char * monitor_type_str = getenv("HPCRUN_WP_REUSE_TYPE");
+                    char * monitor_type_str = getenv("HPCRUN_WP_REUSE_PROFILE_TYPE");
                     if(monitor_type_str){
                         if(0 == strcasecmp(monitor_type_str, "TEMPORAL")) {
-                            reuse_type = REUSE_TEMPORAL;
+                            reuse_profile_type = REUSE_TEMPORAL;
                         } else if (0 == strcasecmp(monitor_type_str, "SPATIAL")) {
-                            reuse_type = REUSE_SPATIAL;
+                            reuse_profile_type = REUSE_SPATIAL;
                          } else if ( 0 == strcasecmp(monitor_type_str, "ALL") ) {
-                            reuse_type = REUSE_BOTH;
+                            reuse_profile_type = REUSE_BOTH;
                          } else {
                             // default;
-                            reuse_type = REUSE_BOTH;
+                            reuse_profile_type = REUSE_BOTH;
                         }
                     } else{
                         // default
-                        reuse_type = REUSE_BOTH;
+                        reuse_profile_type = REUSE_BOTH;
                     }
                 }
 
@@ -1655,11 +1658,11 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
 
     uint64_t time_distance = rdtsc() - wpi->startTime;
 
+#ifdef REUSE_HISTO
     //cct_node_t *reuseNode = getPreciseNode(wt->ctxt, wt->pc, temporal_reuse_metric_id );
     sample_val_t v = hpcrun_sample_callpath(wt->ctxt, temporal_reuse_metric_id, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
     cct_node_t *reuseNode = v.sample_node;
 
-#ifdef REUSE_HISTO
     if (reuse_output_trace){
 	    WriteWitchTraceOutput("REUSE_DISTANCE: %d %d %lu,", hpcrun_cct_persistent_id(wpi->sample.node), hpcrun_cct_persistent_id(reuseNode), inc);
 	    for(int i=0; i < MIN(2, reuse_distance_num_events); i++){
@@ -1674,21 +1677,38 @@ static WPTriggerActionType ReuseWPCallback(WatchPointInfo_t *wpi, int startOffse
 	}
 	ReuseAddDistance(rd, inc);
     }
+
 #else
 
     cct_node_t *reusePairNode;
-    if (reuse_concatenate_use_reuse){
-        reusePairNode = getConcatenatedNode(reuseNode /*bottomNode*/, wpi->sample.node /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_BY][joinNodeIdx] /* joinNode*/);
-    }else{
-        reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_FROM][joinNodeIdx] /* joinNode*/);
+    if (wpi->sample.reuseType == REUSE_TEMPORAL){
+        sample_val_t v = hpcrun_sample_callpath(wt->ctxt, temporal_reuse_metric_id, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
+        cct_node_t *reuseNode = v.sample_node;
+	if (reuse_concatenate_use_reuse){
+            reusePairNode = getConcatenatedNode(reuseNode /*bottomNode*/, wpi->sample.node /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_BY][joinNodeIdx] /* joinNode*/);
+	}else{
+	    reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_TEMPORALLY_REUSED_FROM][joinNodeIdx] /* joinNode*/);
+	}
     }
-
+    else { // REUSE_SPATIAL
+        sample_val_t v = hpcrun_sample_callpath(wt->ctxt, spatial_reuse_metric_id, SAMPLE_NO_INC, 0/*skipInner*/, 1/*isSync*/, NULL);
+        cct_node_t *reuseNode = v.sample_node;
+	if (reuse_concatenate_use_reuse){
+            reusePairNode = getConcatenatedNode(reuseNode /*bottomNode*/, wpi->sample.node /*topNode*/, joinNodes[E_SPATIALLY_REUSED_BY][joinNodeIdx] /* joinNode*/);
+	}else{
+	    reusePairNode = getConcatenatedNode(wpi->sample.node /*bottomNode*/, reuseNode /*topNode*/, joinNodes[E_SPATIALLY_REUSED_FROM][joinNodeIdx] /* joinNode*/);
+	}
+    }
 
     cct_metric_data_increment(reuse_memory_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = (val[0][0] + val[1][0]) });
     cct_metric_data_increment(reuse_memory_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
 
     reuseTemporal += inc;
-    cct_metric_data_increment(temporal_reuse_metric_id, reusePairNode, (cct_metric_data_t){.i = inc});
+    if (wpi->sample.reuseType == REUSE_TEMPORAL){
+        cct_metric_data_increment(temporal_reuse_metric_id, reusePairNode, (cct_metric_data_t){.i = inc});
+    } else {
+        cct_metric_data_increment(spatial_reuse_metric_id, reusePairNode, (cct_metric_data_t){.i = inc});
+    }
     cct_metric_data_increment(reuse_time_distance_metric_id, reusePairNode, (cct_metric_data_t){.i = time_distance});
     cct_metric_data_increment(reuse_time_distance_count_metric_id, reusePairNode, (cct_metric_data_t){.i = 1});
 #endif
@@ -2675,32 +2695,39 @@ bool OnSample(perf_mmap_data_t * mmap_data, void * contextPC, cct_node_t *node, 
             sd.type = reuse_trap_type;
 #endif
 
-
-#if 0 //spatial reuse.. currently we don't need it
-            if (rdtsc() & 1)// 50% chance to detect spatial reuse
-            {
+            bool isProfileSpatial;
+            if (reuse_profile_type == REUSE_TEMPORAL){
+                isProfileSpatial = false;
+            } else if (reuse_profile_type == REUSE_SPATIAL){
+                isProfileSpatial = true;
+            } else {
+                isProfileSpatial = (rdtsc() & 1);
+            }
+            if (isProfileSpatial) {// detect spatial reuse
                 int wpSizes[] = {8, 4, 2, 1};
                 FalseSharingLocs falseSharingLocs[CACHE_LINE_SZ];
                 int numFSLocs = 0;
                 GetAllFalseSharingLocations((size_t)data_addr, accessLen, ALIGN_TO_CACHE_LINE((size_t)(data_addr)), CACHE_LINE_SZ, wpSizes, 0 /*curWPSizeIdx*/ , 4 /*totalWPSizes*/, falseSharingLocs, &numFSLocs);
-                assert(numFSLocs > 0); // at least there is one location to monitor
-                int idx = rdtsc() % numFSLocs; //randomly choose one location to monitor
-                sd.va = (void *)falseSharingLocs[idx].va;
-                sd.reuseType = REUSE_SPATIAL;
+		if (numFSLocs == 0) { // No location is found. It is probably due to the access length already occupies one cache line. So we just monitor the temporal reuse instead.
+		    sd.va = data_addr;
+		    sd.reuseType = REUSE_TEMPORAL;
+		} else {
+                    int idx = rdtsc() % numFSLocs; //randomly choose one location to monitor
+                    sd.va = (void *)falseSharingLocs[idx].va;
+                    sd.reuseType = REUSE_SPATIAL;
 #if 0
-                int offset = ((uint64_t)data_addr - aligned_pc) / accessLen;
-                int bound = CACHE_LINE_SZ / accessLen;
-                int r = rdtsc() % bound;
-                if (r == offset) r = (r+1) % bound;
-                sd.va = aligned_pc + (r * accessLen);
+                    int offset = ((uint64_t)data_addr - aligned_pc) / accessLen;
+                    int bound = CACHE_LINE_SZ / accessLen;
+                    int r = rdtsc() % bound;
+                    if (r == offset) r = (r+1) % bound;
+                    sd.va = aligned_pc + (r * accessLen);
 #endif
-            }
-            else
-#endif
-            {
+		}
+            } else {
                 sd.va = data_addr;
                 sd.reuseType = REUSE_TEMPORAL;
             }
+
             if (!IsValidAddress(sd.va, precisePC)) {
                 goto ErrExit; // incorrect access type
             }
