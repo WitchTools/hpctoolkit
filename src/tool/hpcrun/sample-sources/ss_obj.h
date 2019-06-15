@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2018, Rice University
+// Copyright ((c)) 2002-2019, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -43,6 +43,7 @@
 // if advised of the possibility of such damage.
 //
 // ******************************************************* EndRiceCopyright *
+
 
 #undef _TPx
 #undef _T3
@@ -111,10 +112,8 @@ sample_source_t obj_name() = {
  * constructor 
  *****************************************************************************/
 
-static void reg_fn_name(void) __attribute__ ((constructor));
-
-static void
-reg_fn_name(void)
+void
+SS_OBJ_CONSTRUCTOR(ss_name)(void)
 {
   hpcrun_ss_register(&obj_name());
 }

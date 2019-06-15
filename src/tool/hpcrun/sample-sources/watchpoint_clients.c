@@ -128,7 +128,6 @@
 #include <sys/types.h>
 #include <sys/syscall.h>
 
-#include "datacentric.h"
 #include <hpcrun/unwind/x86-family/x86-move.h>
 #include <utilities/arch/context-pc.h>
 #include "watchpoint_support.h"
