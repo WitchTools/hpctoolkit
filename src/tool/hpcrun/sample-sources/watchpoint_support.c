@@ -153,7 +153,7 @@ static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu
     return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
 }
 
-static pid_t gettid() {
+pid_t gettid() {
     return syscall(__NR_gettid);
 }
 
