@@ -62,7 +62,6 @@
 #include <linux/perf_event.h>
 #include <linux/version.h>
 
-
 /******************************************************************************
  * hpcrun includes
  *****************************************************************************/
@@ -404,6 +403,7 @@ parse_buffer(int sample_type, event_thread_t *current, perf_mmap_data_t *mmap_in
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 	if (sample_type & PERF_SAMPLE_WEIGHT) {
+          perf_read_u64(current_perf_mmap, &mmap_info->weight);
 	  data_read++;
 	}
 	if (sample_type & PERF_SAMPLE_DATA_SRC) {
@@ -426,9 +426,109 @@ parse_buffer(int sample_type, event_thread_t *current, perf_mmap_data_t *mmap_in
 	return data_read;
 }
 
+
+#if defined(__x86_64__) || defined(__i386__)
+
+#ifdef __x86_64__
+#define DECLARE_ARGS(val, low, high)	unsigned low, high
+#define EAX_EDX_VAL(val, low, high)	((low) | ((uint64_t )(high) << 32))
+#define EAX_EDX_ARGS(val, low, high)	"a" (low), "d" (high)
+#define EAX_EDX_RET(val, low, high)	"=a" (low), "=d" (high)
+#else
+#define DECLARE_ARGS(val, low, high)	unsigned long long val
+#define EAX_EDX_VAL(val, low, high)	(val)
+#define EAX_EDX_ARGS(val, low, high)	"A" (val)
+#define EAX_EDX_RET(val, low, high)	"=A" (val)
+#endif
+
+#define barrier() __asm__ __volatile__("": : :"memory")
+
+static inline int rdpmc(pe_mmap_t *mmap, uint64_t *value)
+{
+  int counter = mmap->index - 1;
+  //fprintf(stderr,"counter = %d\n", counter);
+  DECLARE_ARGS(val, low, high);
+
+  if (counter < 0) return -1;
+
+  asm volatile("rdpmc" : EAX_EDX_RET(val, low, high) : "c" (counter));
+  *value = EAX_EDX_VAL(val, low, high);
+  return 0;
+}
+#else
+#error("rdpmc() is not defined");
+#endif
+
+
+/*
+ * val[0] = raw count
+ * val[1] = TIME_ENABLED
+ * val[2] = TIME_RUNNING
+ */
+static inline int isCounterValid(uint64_t *val){
+  if (!val[2] && !val[1] && val[0]) {
+    fprintf(stderr,"WARNING: time_running = 0 = time_enabled, raw count not zero\n");
+    return -1;
+  }
+  if (val[2] > val[1]) {
+    fprintf(stderr, "WARNING: time_running > time_enabled\n");
+    return -1;
+  }
+  return 1;
+}
+
+
 //----------------------------------------------------------------------
 // Public Interfaces
 //----------------------------------------------------------------------
+
+// read the counter value of the event
+// val is an array of uint64_t, at least has a length of 3
+int perf_read_event_counter(event_thread_t *current, uint64_t *val){
+
+  pe_mmap_t *current_perf_mmap = current->mmap;
+  //rdpmc(current_perf_mmap, val); //something wrong when using rdpmc
+
+  if (current->fd < 0){
+    EMSG("Error: unable to open the event %d file descriptor", current->event->id);
+    return -1;
+  }
+  int ret = read(current->fd, val, sizeof(uint64_t) * 3 );
+  if (ret < sizeof(uint64_t)*3) {
+    EMSG("Error: unable to read event %d", current->event->id);
+    return -1;
+  }
+  return 0;
+}
+
+/*
+ * val[0] = raw count
+ * val[1] = TIME_ENABLED
+ * val[2] = TIME_RUNNING
+ */
+uint64_t perf_get_scaled_counter_val(uint64_t *val){
+   uint64_t res = 0;
+  isCounterValid(val);
+  if (val[2]) {
+    res = (uint64_t)((double)val[0] * val[1]/val[2] );
+  }
+  return res;
+}
+
+
+uint64_t perf_get_scaled_counter_delta(uint64_t *val, uint64_t *prev_val){
+  uint64_t res = 0;
+  isCounterValid(val);
+  isCounterValid(prev_val);
+
+  if (val[2] - prev_val[2]) {
+    res = (uint64_t)( 
+        ((double)val[0] - (double)prev_val[0]) * ( (double)val[1] - (double)prev_val[1])
+            / ((double) val[2] - (double)prev_val[2])
+      );
+   }
+   return res;
+}
 
 
 //----------------------------------------------------------

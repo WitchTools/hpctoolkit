@@ -83,6 +83,7 @@ pe_mmap_t* set_mmap(int perf_fd);
 void perf_unmmap(pe_mmap_t *mmap);
 
 int read_perf_buffer(event_thread_t *current, perf_mmap_data_t *mmap_info);
-
-
+int perf_read_event_counter(event_thread_t *current, uint64_t *val);
+uint64_t perf_get_scaled_counter_val(uint64_t *val);
+uint64_t perf_get_scaled_counter_delta(uint64_t *val, uint64_t *prev_val);
 #endif

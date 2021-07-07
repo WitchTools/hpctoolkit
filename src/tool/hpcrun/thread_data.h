@@ -169,6 +169,8 @@ typedef struct thread_data_t {
 
   core_profile_trace_data_t core_profile_trace_data;
 
+  hpcio_outbuf_t witch_client_trace_output; //jqswang: it is used to output any data from witch client for post-mortem processing
+
   // ----------------------------------------
   // backtrace buffer
   // ----------------------------------------

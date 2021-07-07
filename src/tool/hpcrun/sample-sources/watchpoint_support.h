@@ -60,6 +60,7 @@
 
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MAX_WP_LENGTH (8L)
 #define CACHE_LINE_SZ (64)
 #define ALIGN_TO_CACHE_LINE(addr) ((uint64_t)(addr) & (~(CACHE_LINE_SZ-1)))
@@ -84,6 +85,7 @@ typedef enum MergePolicy {AUTO_MERGE, NO_MERGE, CLIENT_ACTION} MergePolicy;
 typedef enum OverwritePolicy {OVERWRITE, NO_OVERWRITE} OverwritePolicy;
 typedef enum VictimType {EMPTY_SLOT, NON_EMPTY_SLOT, NONE_AVAILABLE} VictimType;
 typedef enum WPTriggerActionType {DISABLE_WP, ALREADY_DISABLED, DISABLE_ALL_WP, RETAIN_WP} WPTriggerActionType;
+typedef enum ReuseType { REUSE_TEMPORAL, REUSE_SPATIAL, REUSE_BOTH} ReuseType; // for reuse client
 
 // Data structure that is given by clients to set a WP
 typedef struct SampleData{
@@ -101,6 +103,8 @@ typedef struct SampleData{
     WPTriggerActionType preWPAction;
     bool isSamplePointAccurate;
     bool isBackTrace;
+    ReuseType reuseType;
+    uint64_t reuseDistance[2][3];
 } SampleData_t;
 
 typedef struct WatchPointInfo{
@@ -152,8 +156,7 @@ extern bool IsFSorGS(void *addr);
 extern double ProportionOfWatchpointAmongOthersSharingTheSameContext(WatchPointInfo_t *wpi);
 
 
-extern void TemporalReuseWPConfigOverride(void*);
-extern void SpatialReuseWPConfigOverride(void*);
+extern void ReuseWPConfigOverride(void*);
 extern void FalseSharingWPConfigOverride(void*);
 extern void TrueSharingWPConfigOverride(void*);
 extern void AllSharingWPConfigOverride(void*);

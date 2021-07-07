@@ -189,10 +189,10 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context);
 __attribute__((constructor))
 static void InitConfig(){
     tData.fptr = NULL;
-    
+
     volatile int dummyWP[MAX_WP_SLOTS];
     wpConfig.isLBREnabled = true;
-    
+
     struct perf_event_attr peLBR = {
         .type                   = PERF_TYPE_BREAKPOINT,
         .size                   = sizeof(struct perf_event_attr),
@@ -213,9 +213,19 @@ static void InitConfig(){
     } else {
         wpConfig.isLBREnabled = false;
     }
+    {  //jqswang: Maybe we can move this part to other better location?
+        char * lbr_flag_str = getenv("HPCRUN_WP_REUSE_LBR");
+        if (lbr_flag_str &&  0 == strcasecmp(lbr_flag_str, "ENABLE")){
+            wpConfig.isLBREnabled = true;
+            //printf(stderr,"LBR is set to TRUE\n");
+        } else {
+            wpConfig.isLBREnabled = false;
+            //fprintf(stderr,"LBR is set to FALSE\n");
+        }
+    }
     CHECK(close(fd));
-    
-    
+
+
 #if defined(FAST_BP_IOC_FLAG)
     wpConfig.isWPModifyEnabled = true;
 #else
@@ -225,7 +235,7 @@ static void InitConfig(){
     //wpConfig.signalDelivered = SIGIO;
     //wpConfig.signalDelivered = SIGUSR1;
     wpConfig.signalDelivered = SIGRTMIN + 3;
-    
+
     // Setup the signal handler
     sigset_t block_mask;
     sigfillset(&block_mask);
@@ -235,18 +245,18 @@ static void InitConfig(){
         .sa_mask = block_mask,
         .sa_flags = SA_SIGINFO | SA_RESTART | SA_NODEFER | SA_ONSTACK
     };
-    
+
     if(monitor_sigaction(wpConfig.signalDelivered, OnWatchPoint, 0 /*flags*/, &sa1) == -1) {
         fprintf(stderr, "Failed to set WHICH_SIG handler: %s\n", strerror(errno));
         monitor_real_abort();
     }
-    
-    
-    
-    
-    
+
+
+
+
+
     wpConfig.pgsz = sysconf(_SC_PAGESIZE);
-    
+
     // identify max WP supported by the architecture
     volatile int wpHandles[MAX_WP_SLOTS];
     int i = 0;
@@ -270,7 +280,7 @@ static void InitConfig(){
             break;
         }
     }
-    
+
     if(i == 0) {
         fprintf(stderr, "Cannot create a single watch point\n");
         monitor_real_abort();
@@ -279,10 +289,10 @@ static void InitConfig(){
         CHECK(close(wpHandles[j]));
     }
     wpConfig.maxWP = i;
-    
+
     // Should we get the floating point type in an access?
     wpConfig.getFloatType = false;
-    
+
     // Get the replacement scheme
     char * replacementScheme = getenv("HPCRUN_WP_REPLACEMENT_SCHEME");
     if(replacementScheme){
@@ -300,7 +310,7 @@ static void InitConfig(){
         // default;
         wpConfig.replacementPolicy = AUTO;
     }
-    
+
     // Should we fix IP off by one?
     char * fixIP = getenv("HPCRUN_WP_DONT_FIX_IP");
     if(fixIP){
@@ -316,7 +326,7 @@ static void InitConfig(){
         // default;
         wpConfig.dontFixIP = false;
     }
-    
+
     // Should we get the address in a WP trigger?
     char * disassembleWPAddress = getenv("HPCRUN_WP_DONT_DISASSEMBLE_TRIGGER_ADDRESS");
     if(disassembleWPAddress){
@@ -333,8 +343,8 @@ static void InitConfig(){
         wpConfig.dontDisassembleWPAddress = false;
     }
 
-    
-    
+
+
 }
 
 void RedSpyWPConfigOverride(void *v){
@@ -377,16 +387,11 @@ void IPCAllSharingWPConfigOverride(void *v){
 }
 
 
-void TemporalReuseWPConfigOverride(void *v){
+void ReuseWPConfigOverride(void *v){
     // dont fix IP
     wpConfig.dontFixIP = true;
     wpConfig.dontDisassembleWPAddress = true;
-}
-
-void SpatialReuseWPConfigOverride(void *v){
-    // dont fix IP
-    wpConfig.dontFixIP = true;
-    wpConfig.dontDisassembleWPAddress = true;
+    wpConfig.isLBREnabled = false; //jqswang
 }
 
 static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, bool modify) {
@@ -404,7 +409,7 @@ static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, 
         .exclude_hv             = 1,
         .disabled               = 0, /* enabled */
     };
-    
+
     switch (sampleData->wpLength) {
         case 1: pe.bp_len = HW_BREAKPOINT_LEN_1; break;
         case 2: pe.bp_len = HW_BREAKPOINT_LEN_2; break;
@@ -415,13 +420,13 @@ static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, 
             monitor_real_abort();
     }
     pe.bp_addr = (uintptr_t)sampleData->va;
-    
+
     switch (sampleData->type) {
         case WP_READ: pe.bp_type = HW_BREAKPOINT_R; break;
         case WP_WRITE: pe.bp_type = HW_BREAKPOINT_W; break;
         default: pe.bp_type = HW_BREAKPOINT_W | HW_BREAKPOINT_R;
     }
-    
+
 #if defined(FAST_BP_IOC_FLAG)
     if(modify) {
         // modification
@@ -444,10 +449,10 @@ static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, 
         }
         // Set the perf_event file to async mode
         CHECK(fcntl(perf_fd, F_SETFL, fcntl(perf_fd, F_GETFL, 0) | O_ASYNC));
-        
+
         // Tell the file to send a signal when an event occurs
         CHECK(fcntl(perf_fd, F_SETSIG, wpConfig.signalDelivered));
-        
+
         // Deliver the signal to this thread
         struct f_owner_ex fown_ex;
         fown_ex.type = F_OWNER_TID;
@@ -457,17 +462,17 @@ static void CreateWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData, 
             EMSG("Failed to set the owner of the perf event file: %s\n", strerror(errno));
             return;
         }
-        
-        
+
+
         //       CHECK(fcntl(perf_fd, F_SETOWN, gettid()));
-        
+
         wpi->fileHandle = perf_fd;
         // mmap the file if lbr is enabled
-        if(wpConfig.isLBREnabled) {
+        //if(wpConfig.isLBREnabled) {
             wpi->mmapBuffer = MAPWPMBuffer(perf_fd);
-        }
+        //}
     }
-    
+
     wpi->isActive = true;
     wpi->va = (void *) pe.bp_addr;
     wpi->sample = *sampleData;
@@ -490,7 +495,7 @@ static void CreateDummyHardwareEvent(void) {
         .exclude_hv             = 1,
         .branch_sample_type     = PERF_SAMPLE_BRANCH_ANY,
     };
-    
+
     // Create the perf_event for this thread on all CPUs with no event group
     int perf_fd = perf_event_open(&pe, 0, -1, -1, 0);
     if (perf_fd == -1) {
@@ -508,14 +513,14 @@ static void CloseDummyHardwareEvent(int perf_fd){
 /*********** Client interfaces *******/
 
 static void DisArm(WatchPointInfo_t * wpi){
-    
+
     //    assert(wpi->isActive);
     assert(wpi->fileHandle != -1);
-    
+
     if(wpi->mmapBuffer)
         UNMAPWPMBuffer(wpi->mmapBuffer);
     wpi->mmapBuffer = 0;
-    
+
     CHECK(close(wpi->fileHandle));
     wpi->fileHandle = -1;
     wpi->isActive = false;
@@ -531,7 +536,7 @@ static bool ArmWatchPoint(WatchPointInfo_t * wpi, SampleData_t * sampleData) {
             return true;
         }
     }
-    
+
     // disable the old WP if active
     if(wpi->isActive) {
         DisArm(wpi);
@@ -554,7 +559,7 @@ void WatchpointThreadInit(WatchPointUpCall_t func){
         EMSG("Failed sigaltstack");
         monitor_real_abort();
     }
-    
+
     tData.lbrDummyFD = -1;
     tData.fptr = func;
     tData.fs_reg_val = (void*)-1;
@@ -567,15 +572,15 @@ void WatchpointThreadInit(WatchPointUpCall_t func){
     tData.numWatchpointDropped = 0;
     tData.numSampleTriggeringWatchpoints = 0;
     tData.numInsaneIP = 0;
-    
-    
+
+
     for (int i=0; i<wpConfig.maxWP; i++) {
         tData.watchPointArray[i].isActive = false;
         tData.watchPointArray[i].fileHandle = -1;
         tData.watchPointArray[i].startTime = 0;
         tData.watchPointArray[i].samplePostFull = SAMPLES_POST_FULL_RESET_VAL;
     }
-    
+
     //if LBR is supported create a dummy PERF_TYPE_HARDWARE for Linux workaround
     if(wpConfig.isLBREnabled) {
         CreateDummyHardwareEvent();
@@ -588,14 +593,14 @@ void WatchpointThreadTerminate(){
             DisArm(&tData.watchPointArray[i]);
         }
     }
-    
+
     if(tData.lbrDummyFD != -1) {
         CloseDummyHardwareEvent(tData.lbrDummyFD);
         tData.lbrDummyFD = -1;
     }
     tData.fs_reg_val = (void*)-1;
     tData.gs_reg_val = (void*)-1;
-    
+
     hpcrun_stats_num_watchpoints_triggered_inc(tData.numWatchpointTriggers);
     hpcrun_stats_num_watchpoints_imprecise_inc(tData.numWatchpointImpreciseIP);
     hpcrun_stats_num_watchpoints_imprecise_address_inc(tData.numWatchpointImpreciseAddressArbitraryLength);
@@ -649,7 +654,7 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
 		int tmp = slots[i];
 		slots[i] = slots[randVal];
 		slots[randVal] = tmp;
-	   }	
+	   }
 
 	   // attempt to replace each WP with its own probability
 	   for(int i = 0; i < wpConfig.maxWP; i++) {
@@ -657,10 +662,10 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
 		double probabilityToReplace =  1.0/(1.0 + (double)tData.watchPointArray[loc].samplePostFull);
             	double randValue;
             	drand48_r(&tData.randBuffer, &randValue);
- 
+
 	        // update tData.samplePostFull
                 tData.watchPointArray[loc].samplePostFull++;
-            
+
                 if(randValue <= probabilityToReplace) {
 		    *location = loc;
                     // TODO: Milind: Not sure whether I should increment samplePostFull of the remainiing slots.
@@ -670,16 +675,16 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
                     }
                     return NON_EMPTY_SLOT;
                 }
-	   }	
+	   }
            // this is an indication not to replace, but if the client chooses to force, they can
 	   *location = slots[0] /*random value*/;
            return NONE_AVAILABLE;
 	}
 	break;
-            
+
         case NEWEST:{
             // Always replace the newest
-            
+
             int64_t newestTime = 0;
             for(int i = 0; i < wpConfig.maxWP; i++){
                 if(newestTime < tData.watchPointArray[i].startTime) {
@@ -690,10 +695,10 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
             return NON_EMPTY_SLOT;
         }
             break;
-            
+
         case OLDEST:{
             // Always replace the oldest
-            
+
             int64_t oldestTime = INT64_MAX;
             for(int i = 0; i < wpConfig.maxWP; i++){
                 if(oldestTime > tData.watchPointArray[i].startTime) {
@@ -704,7 +709,7 @@ static VictimType GetVictim(int * location, ReplacementPolicy policy){
             return NON_EMPTY_SLOT;
         }
             break;
-            
+
         case EMPTY_SLOT_ONLY:{
             return NONE_AVAILABLE;
         }
@@ -729,12 +734,12 @@ static void ConsumeAllRingBufferData(void  *mbuf) {
      * data points to beginning of buffer payload
      */
     void * data = ((void *)hdr) + wpConfig.pgsz;
-    
+
     /*
      * position of tail within the buffer payload
      */
     tail = hdr->data_tail & pgmsk;
-    
+
     /*
      * size of what is available
      *
@@ -764,12 +769,12 @@ static int ReadMampBuffer(void  *mbuf, void *buf, size_t sz) {
      * data points to beginning of buffer payload
      */
     data = ((void *)hdr) + wpConfig.pgsz;
-    
+
     /*
      * position of tail within the buffer payload
      */
     tail = hdr->data_tail & pgmsk;
-    
+
     /*
      * size of what is available
      *
@@ -781,15 +786,15 @@ static int ReadMampBuffer(void  *mbuf, void *buf, size_t sz) {
         rmb();
         return -1;
     }
-    
+
     /* From perf_event_open() manpage */
     rmb();
-    
-    
+
+
     /*
      * sz <= avail_sz, we can satisfy the request
      */
-    
+
     /*
      * c = size till end of buffer
      *
@@ -797,23 +802,23 @@ static int ReadMampBuffer(void  *mbuf, void *buf, size_t sz) {
      * a power of two, so we can do:
      */
     c = pgmsk + 1 -  tail;
-    
+
     /*
      * min with requested size
      */
     m = c < sz ? c : sz;
-    
+
     /* copy beginning */
     memcpy(buf, data + tail, m);
-    
+
     /*
      * copy wrapped around leftover
      */
     if (sz > m)
         memcpy(buf + m, data, sz - m);
-    
+
     hdr->data_tail += sz;
-    
+
     return 0;
 }
 
@@ -867,7 +872,7 @@ static inline void *  GetPatchedIP(void *  contextIP) {
 static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrigger_t *wpt, void * context){
     //struct perf_event_mmap_page * b = wpi->mmapBuffer;
     struct perf_event_header hdr;
-    
+
     if (ReadMampBuffer(wpi->mmapBuffer, &hdr, sizeof(struct perf_event_header)) < 0) {
         EMSG("Failed to ReadMampBuffer: %s\n", strerror(errno));
         monitor_real_abort();
@@ -885,7 +890,6 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
                     EMSG("Failed to ReadMampBuffer: %s\n", strerror(errno));
                     monitor_real_abort();
                 }
-                
                 if(! (hdr.misc & PERF_RECORD_MISC_EXACT_IP)){
                     //EMSG("PERF_SAMPLE_IP imprecise\n");
                     tData.numWatchpointImpreciseIP ++;
@@ -899,7 +903,8 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
                         reliableIP = patchedIP;
                     } else {
                         // Fake as requested by Xu for reuse clients
-                        reliableIP = contextIP-1;
+			//reliableIP = contextIP-1;
+                        reliableIP = 0; //To avoid ambiguity, just ignore the inaccurate PC for the moment for reuse client. TODO: Can we still use the inaccurate pc?
                     }
                     //EMSG("PERF_SAMPLE_IP imprecise: %p patched to %p in WP handler\n", tmpIP, patchedIP);
                 } else {
@@ -932,9 +937,9 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
                     reliableIP = contextIP-1;
                 }
             }
-            
+
             wpt->pc = reliableIP;
-            
+
             if(wpConfig.dontDisassembleWPAddress == false){
                 FloatType * floatType = wpConfig.getFloatType? &wpt->floatType : 0;
                 if(false == get_mem_access_length_and_type_address(wpt->pc, (uint32_t*) &(wpt->accessLength), &(wpt->accessType), floatType, context, &addr)){
@@ -945,8 +950,8 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
                     //EMSG("WP triggered 0 access length! at pc=%p\n", wpt->pc);
                     goto ErrExit;
                 }
-                
-                
+
+
                 void * patchedAddr = (void *)-1;
                 // Stack affecting addresses will be off by 8
                 // Some instructions affect the address computing register: mov    (%rax),%eax
@@ -957,7 +962,7 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
                     else
                         tData.numWatchpointImpreciseAddressArbitraryLength ++;
 
-                    
+
                     tData.numWatchpointImpreciseAddressArbitraryLength ++;
                     patchedAddr = wpi->va;
                 } else {
@@ -992,7 +997,7 @@ static bool CollectWatchPointTriggerInfo(WatchPointInfo_t  * wpi, WatchPointTrig
             //SkipBuffer(wpi->mmapBuffer , hdr.size - sizeof(hdr));
             goto ErrExit;
     }
-    
+
 ErrExit:
     // We must cleanup the mmap buffer if there is any data left
     ConsumeAllRingBufferData(wpi->mmapBuffer);
@@ -1017,12 +1022,12 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
     // and return and avoid any MSG.
     void* pc = hpcrun_context_pc(context);
     if (!hpcrun_safe_enter_async(pc)) return 0;
-    
+
     linux_perf_events_pause();
-    
+
     tData.numWatchpointTriggers++;
     //fprintf(stderr, " numWatchpointTriggers = %lu, \n", tData.numWatchpointTriggers);
-    
+
     //find which watchpoint fired
     int location = -1;
     for(int i = 0 ; i < wpConfig.maxWP; i++) {
@@ -1031,7 +1036,7 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
             break;
         }
     }
-    
+
     // Ensure it is an active WP
     if(location == -1) {
         EMSG("\n WP trigger did not match any known active WP\n");
@@ -1041,7 +1046,7 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
         //fprintf("\n WP trigger did not match any known active WP\n");
         return 0;
     }
-    
+
     WatchPointTrigger_t wpt;
     WPTriggerActionType retVal;
     WatchPointInfo_t *wpi = &tData.watchPointArray[location];
@@ -1062,15 +1067,15 @@ static int OnWatchPoint(int signum, siginfo_t *info, void *context){
             monitor_real_abort();
             break;
     }
-    
-    
+
+
     if( false == CollectWatchPointTriggerInfo(wpi, &wpt, context)) {
         tData.numWatchpointDropped++;
         retVal = DISABLE_WP; // disable if unable to collect any info.
     } else {
         retVal = tData.fptr(wpi, 0, wpt.accessLength/* invalid*/,  &wpt);
     }
-    
+
     // Let the client take action.
     switch (retVal) {
         case DISABLE_WP: {
@@ -1127,7 +1132,7 @@ static bool ValidateWPData(SampleData_t * sampleData){
             else
                 return false;
             break;
-            
+
         default:
             EMSG("Unsuppported WP length %d", sampleData->wpLength);
             monitor_real_abort();
@@ -1170,19 +1175,19 @@ bool SubscribeWatchpoint(SampleData_t * sampleData, OverwritePolicy overwritePol
     if(IsOveralpped(sampleData)){
         return false; // drop the sample if it overlaps an existing address
     }
-    
+
     // No overlap, look for a victim slot
     int victimLocation = -1;
     // Find a slot to install WP
     VictimType r = GetVictim(&victimLocation, wpConfig.replacementPolicy);
-    
+
     if(r != NONE_AVAILABLE) {
         // VV IMP: Capture value before arming the WP.
         if(captureValue)
             CaptureValue(sampleData, &tData.watchPointArray[victimLocation]);
         // I know the error case that we have captured the value but ArmWatchPoint fails.
         // I am not handling that corner case because ArmWatchPoint() will fail with a monitor_real_abort().
-        
+
         if(ArmWatchPoint(&tData.watchPointArray[victimLocation], sampleData) == false){
             //LOG to hpcrun log
             EMSG("ArmWatchPoint failed for address %p", sampleData->va);
@@ -1202,14 +1207,14 @@ WPUpCallTRetType Test1UpCall(WatchPointInfo_t * wp, WatchPointTrigger_t * wt) {
     printf("\n Test1UpCall %p\n", wt->va);
     if(wpConfig.isLBREnabled)
         assert(wp->sample.va == wt->va);
-    
+
     cnt ++;
     return DISABLE;
 }
 
 void TestBasic(){
     tData.fptr = Test1UpCall;
-    
+
     sigset_t block_mask;
     sigemptyset (&block_mask);
     // Set a signal handler for SIGUSR1
@@ -1218,18 +1223,18 @@ void TestBasic(){
         //        .sa_mask = block_mask,
         .sa_flags = SA_SIGINFO | SA_RESTART | SA_NODEFER
     };
-    
+
     if(sigaction(wpConfig.signalDelivered, &sa1, NULL) == -1) {
         fprintf(stderr, "Failed to set WHICH_SIG handler: %s\n", strerror(errno));
         monitor_real_abort();
     }
-    
-    
+
+
     WatchpointThreadInit();
     int N = 10000;
     volatile int dummyWPLocation[10000];
     cnt = 0;
-    
+
     for(int i = 0 ; i < N; i++) {
         SampleData_t s = {.va = &dummyWPLocation[i], .wpLength = sizeof(int), .type = WP_WRITE};
         SubscribeWatchpoint(&s, AUTO);

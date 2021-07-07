@@ -62,7 +62,7 @@
 #include <unistd.h>
 #include <math.h>
 
-#include <sys/syscall.h> 
+#include <sys/syscall.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -90,7 +90,7 @@
 #include "sample-sources/common.h"
 #include "sample-sources/watchpoint_support.h"
 #include "sample-sources/ss-errno.h"
- 
+
 #include <hpcrun/cct_insert_backtrace.h>
 #include <hpcrun/files.h>
 #include <hpcrun/hpcrun_stats.h>
@@ -109,7 +109,7 @@
 #include <lib/prof-lean/hpcrun-metric.h> // prefix for metric helper
 #include <lib/support-lean/OSUtil.h>     // hostid
 
-#include <include/linux_info.h> 
+#include <include/linux_info.h>
 
 #include "perfmon-util.h"
 
@@ -135,7 +135,7 @@
 // default number of samples per second per thread
 //
 // linux perf has a default of 4000. this seems high, but the overhead for perf
-// is still small.  however, for some processors (e.g., KNL), overhead 
+// is still small.  however, for some processors (e.g., KNL), overhead
 // at such a high sampling rate is significant and as a result, the kernel
 // will adjust the threshold to less than 100.
 //
@@ -178,17 +178,18 @@ struct event_threshold_s {
 };
 
 //******************************************************************************
-// forward declarations 
+// forward declarations
 //******************************************************************************
 
-static bool 
+static bool
 perf_thread_init(event_info_t *event, event_thread_t *et);
 
-static void 
+static void
 perf_thread_fini(int nevents, event_thread_t *event_thread);
 
-static int 
+static int
 perf_event_handler( int sig, siginfo_t* siginfo, void* context);
+
 
 
 //******************************************************************************
@@ -197,6 +198,12 @@ perf_event_handler( int sig, siginfo_t* siginfo, void* context);
 
 static const struct timespec nowait = {0, 0};
 
+
+
+
+//******************************************************************************
+// global variables
+//******************************************************************************
 
 
 //******************************************************************************
@@ -219,17 +226,34 @@ extern __thread bool hpcrun_thread_suppress_sample;
 
 
 //******************************************************************************
-// private operations 
+// private operations
 //******************************************************************************
 
 
-/* 
+// The array values consists of three elements.
+// values[0]: raw counter value; values[1]: the time enabling; values[1]: the time running
+static inline uint64_t perf_scale(uint64_t *values) {
+  uint64_t res = 0;
+
+  if (!values[2] && !values[1] && values[0]) {
+    EMSG("WARNING: time_running = 0 = time_enabled, raw count not zero\n");
+  }
+  if (values[2] > values[1]) {
+    EMSG("WARNING: time_running > time_enabled\n");
+  }
+  if (values[2]) {
+    res = (uint64_t)((double)values[0] * values[1]/values[2]);
+  }
+  return res;
+}
+
+/*
  * determine whether the perf sample source has been finalized for this thread
- */ 
-static int 
+ */
+static int
 perf_was_finalized
 (
- int nevents, 
+ int nevents,
  event_thread_t *event_thread
 )
 {
@@ -239,7 +263,7 @@ perf_was_finalized
 
 /*
  * Enable all the counters
- */ 
+ */
 static void
 perf_start_all(int nevents, event_thread_t *event_thread)
 {
@@ -247,9 +271,9 @@ perf_start_all(int nevents, event_thread_t *event_thread)
 
   for(i=0; i<nevents; i++) {
     int fd = event_thread[i].fd;
-    if (fd<0) 
-      continue; 
- 
+    if (fd<0)
+      continue;
+
     ret = ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
     if (ret == -1) {
@@ -260,7 +284,7 @@ perf_start_all(int nevents, event_thread_t *event_thread)
 
 /*
  * Disable all the counters
- */ 
+ */
 static void
 perf_stop_all(int nevents, event_thread_t *event_thread)
 {
@@ -268,13 +292,25 @@ perf_stop_all(int nevents, event_thread_t *event_thread)
 
   for(i=0; i<nevents; i++) {
     int fd = event_thread[i].fd;
-    if (fd<0) 
-      continue; 
- 
+    if (fd<0)
+      continue;
+
     ret = ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
     if (ret == -1) {
       EMSG("Can't disable event with fd: %d: %s", fd, strerror(errno));
     }
+  }
+}
+
+/*
+ * Reset a counter value by the mapped file descriptor
+ */
+static void
+perf_reset_counter(int fd)
+{
+  int ret = ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+  if (ret == -1){
+    EMSG("Can't reset event with fd: %d: %s", fd, strerror(errno));
   }
 }
 
@@ -342,7 +378,7 @@ copy_kallsyms()
 // initialization
 //----------------------------------------------------------
 
-static void 
+static void
 perf_init()
 {
   // copy /proc/kallsyms file into hpctoolkit output directory
@@ -356,7 +392,7 @@ perf_init()
 
   perf_mmap_init();
 
-  // initialize sigset to contain PERF_SIGNAL 
+  // initialize sigset to contain PERF_SIGNAL
   sigset_t sig_mask;
   sigemptyset(&sig_mask);
   sigaddset(&sig_mask, PERF_SIGNAL);
@@ -383,11 +419,12 @@ perf_init()
 // initialize an event
 //  event_num: event number
 //  name: name of event (has to be recognized by perf event)
-//  threshold: sampling threshold 
+//  threshold: sampling threshold
 //----------------------------------------------------------
 static bool
 perf_thread_init(event_info_t *event, event_thread_t *et)
 {
+  et->num_overflows = 0;
   et->event = event;
   // ask sys to "create" the event
   // it returns -1 if it fails.
@@ -403,20 +440,20 @@ perf_thread_init(event_info_t *event, event_thread_t *et)
          " id: %d, fd: %d, skid: %d,"
          " config: %d, type: %d, sample_freq: %d,"
          " freq: %d, error: %s",
-         event->id, et->fd, event->attr.precise_ip, 
-         event->attr.config, event->attr.type, event->attr.sample_freq, 
+         event->id, et->fd, event->attr.precise_ip,
+         event->attr.config, event->attr.type, event->attr.sample_freq,
          event->attr.freq, strerror(errno));
     return false;
   }
 
-  // create mmap buffer for this file 
+  // create mmap buffer for this file
   et->mmap = set_mmap(et->fd);
 
   // make sure the file I/O is asynchronous
   int flag = fcntl(et->fd, F_GETFL, 0);
   int ret  = fcntl(et->fd, F_SETFL, flag | O_ASYNC );
   if (ret == -1) {
-    EMSG("Can't set notification for event %d, fd: %d: %s", 
+    EMSG("Can't set notification for event %d, fd: %d: %s",
       event->id, et->fd, strerror(errno));
   }
 
@@ -434,13 +471,13 @@ perf_thread_init(event_info_t *event, event_thread_t *et)
   owner.pid  = syscall(SYS_gettid);
   ret = fcntl(et->fd, F_SETOWN_EX, &owner);
   if (ret == -1) {
-    EMSG("Can't set thread owner for event %d, fd: %d: %s", 
+    EMSG("Can't set thread owner for event %d, fd: %d: %s",
       event->id, et->fd, strerror(errno));
   }
 
   ret = ioctl(et->fd, PERF_EVENT_IOC_RESET, 0);
   if (ret == -1) {
-    EMSG("Can't reset event %d, fd: %d: %s", 
+    EMSG("Can't reset event %d, fd: %d: %s",
       event->id, et->fd, strerror(errno));
   }
   return (ret >= 0);
@@ -448,7 +485,7 @@ perf_thread_init(event_info_t *event, event_thread_t *et)
 
 
 //----------------------------------------------------------
-// actions when the program terminates: 
+// actions when the program terminates:
 //  - unmap the memory
 //  - close file descriptors used by each event
 //----------------------------------------------------------
@@ -473,7 +510,7 @@ perf_thread_fini(int nevents, event_thread_t *event_thread)
       event_thread[i].fd = PERF_FD_FINALIZED;
     }
 
-    if (event_thread[i].mmap) { 
+    if (event_thread[i].mmap) {
       perf_unmmap(event_thread[i].mmap);
       event_thread[i].mmap = 0;
     }
@@ -499,7 +536,7 @@ get_fd_index(int nevents, int fd, event_thread_t *event_thread)
     if (event_thread[i].fd == fd)
       return &(event_thread[i]);
   }
-  return NULL; 
+  return NULL;
 }
 
 static sample_val_t*
@@ -571,11 +608,40 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
     } else {
         td->precise_pc = 0;
     }
-    
-  *sv = hpcrun_sample_callpath(context, current->event->metric,
-        (hpcrun_metricVal_t) {.r=counter},
-        0/*skipInner*/, 0/*isSync*/, &info);
 
+  if ( strstr(current->event->metric_desc->name, "LATENCY_ABOVE_THRESHOLD") || strstr(current->event->metric_desc->name, "LOAD_LATENCY") ) {
+    perf_mmap_data_src_t data_src;
+    data_src.val = mmap_data->data_src;
+
+    assert( (data_src.mem_lvl & PERF_MEM_LVL_MISS) == 0); // jqswang: Have not met PERF_MEM_LVL_MISS before. Notify me if there is one.
+
+    if ( (data_src.mem_lvl & PERF_MEM_LVL_HIT) && ( (data_src.mem_lvl & PERF_MEM_LVL_L1) == 0) ){ // L1 MISS
+      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t) {.r=counter}, 0/*skipInner*/, 0/*isSync*/, &info);
+      extern int latency_metric_id;
+      cct_metric_data_increment(latency_metric_id, sv->sample_node, (cct_metric_data_t){.i = mmap_data->weight});
+      extern int latency_l1_miss_load_metric_id;
+      cct_metric_data_increment(latency_l1_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
+
+      if ( (data_src.mem_lvl & PERF_MEM_LVL_LFB) == 0) {
+        if ( (data_src.mem_lvl & PERF_MEM_LVL_L2) == 0) { // L2 miss
+	  extern int latency_l2_miss_load_metric_id;
+	  cct_metric_data_increment(latency_l2_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
+
+	  if ( (data_src.mem_lvl & PERF_MEM_LVL_L3) == 0) { // L3 miss
+	    extern int latency_l3_miss_load_metric_id;
+	    cct_metric_data_increment(latency_l3_miss_load_metric_id, sv->sample_node, (cct_metric_data_t){.i = counter});
+	  }
+	}
+      }
+    } else { // Otherwise (L1 HIT, Non_Available)
+      *sv = hpcrun_sample_callpath(context, current->event->metric, (hpcrun_metricVal_t){.r=counter}, 0/*skipInner*/, 0/*isSync*/, &info);
+    }
+  }
+  else {
+    *sv = hpcrun_sample_callpath(context, current->event->metric,
+          (hpcrun_metricVal_t) {.r=counter},
+          0/*skipInner*/, 0/*isSync*/, &info);
+  }
   // no need to reset the precise_pc; hpcrun_sample_callpath does so
   // td->precise_pc = 0;
 
@@ -603,7 +669,7 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
              sv->sample_node,
              current->event->metric);
   }
-  blame_shift_apply(current->event->metric, sv->sample_node, 
+  blame_shift_apply(current->event->metric, sv->sample_node,
                     counter /*metricIncr*/);
 
   return sv;
@@ -730,10 +796,10 @@ METHOD_FN(thread_fini_action)
 {
   TMSG(LINUX_PERF, "%d: unregister thread", self->sel_idx);
 
-  METHOD_CALL(self, stop); // stop the sample source 
+  METHOD_CALL(self, stop); // stop the sample source
 
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
-  int nevents = (self->evl).nevents; 
+  int nevents = (self->evl).nevents;
 
   perf_thread_fini(nevents, event_thread);
 
@@ -783,10 +849,10 @@ METHOD_FN(shutdown)
 {
   TMSG(LINUX_PERF, "shutdown");
 
-  METHOD_CALL(self, stop); // stop the sample source 
+  METHOD_CALL(self, stop); // stop the sample source
 
   event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
-  int nevents = (self->evl).nevents; 
+  int nevents = (self->evl).nevents;
 
   perf_thread_fini(nevents, event_thread);
 
@@ -831,7 +897,7 @@ METHOD_FN(supports_event, const char *ev_str)
 }
 
 
- 
+
 // --------------------------------------------------------------------------
 // handle a list of events
 // --------------------------------------------------------------------------
@@ -849,7 +915,7 @@ METHOD_FN(process_event_list, int lush_metrics)
   // TODO: stupid way to count the number of events
 
   for (event = start_tok(evlist); more_tok(); event = next_tok(), num_events++);
-  
+
   // setup all requested events
   // if an event cannot be initialized, we still keep it in our list
   //  but there will be no samples
@@ -861,6 +927,16 @@ METHOD_FN(process_event_list, int lush_metrics)
 	  return;
   }
   memset(event_desc, 0, size);
+
+  extern int *reuse_distance_events;
+  extern int reuse_distance_num_events;
+  reuse_distance_events = (int *) hpcrun_malloc(sizeof(int) * num_events);
+  reuse_distance_num_events = 0;
+  if (reuse_distance_events == NULL){
+      EMSG("Unable to allocate %d bytes", sizeof(int)*num_events);
+      return;
+  }
+
 
   int i=0;
 
@@ -913,7 +989,7 @@ METHOD_FN(process_event_list, int lush_metrics)
 
     // ------------------------------------------------------------
     // initialize the property of the metric
-    // if the metric's name has "CYCLES" it mostly a cycle metric 
+    // if the metric's name has "CYCLES" it mostly a cycle metric
     //  this assumption is not true, but it's quite closed
     // ------------------------------------------------------------
 
@@ -928,18 +1004,47 @@ METHOD_FN(process_event_list, int lush_metrics)
                                    // since the OS will free it, we don't have to do it in hpcrun
     // set the metric for this perf event
     event_desc[i].metric = hpcrun_new_metric();
-   
+
+
+    /******** For witch client WP_REUSE ***************/
+#ifdef REUSE_HISTO
+    if (strstr(name, "MEM_UOPS_RETIRED") != NULL)
+#else
+    if (strstr(name, "MEM_UOPS_RETIRED") != NULL) //jqswang: TODO // && threshold == 0)
+#endif
+    {
+        reuse_distance_events[reuse_distance_num_events++] = i;
+    }
+    /**************************************************/
+
+
     // ------------------------------------------------------------
     // if we use frequency (event_type=1) then the period is not deterministic,
     // it can change dynamically. In this case, the period is 1
     // ------------------------------------------------------------
     if (!is_period) {
-      // using frequency : the threshold is always 1, 
+      // using frequency : the threshold is always 1,
       //                   since the period is determine dynamically
       threshold = 1;
     }
     metric_desc_t *m = hpcrun_set_metric_info_and_period(event_desc[i].metric, name_dup,
             MetricFlags_ValFmt_Real, threshold, prop);
+
+    // add the latency metric if the event is MEM_TRANS_RETIRED:LATENCY_ABOVE_THRESHOLD or MEM_TRANS_RETIRED:LOAD_LATENCY
+    if (strstr(name, "MEM_TRANS_RETIRED")) {
+      extern int latency_metric_id;
+      latency_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_metric_id, "LATENCY", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+      extern int latency_l1_miss_load_metric_id;
+      latency_l1_miss_load_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_l1_miss_load_metric_id, "L1_CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+      extern int latency_l2_miss_load_metric_id;
+      latency_l2_miss_load_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_l2_miss_load_metric_id, "L2_CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+      extern int latency_l3_miss_load_metric_id;
+      latency_l3_miss_load_metric_id = hpcrun_new_metric();
+      hpcrun_set_metric_info_and_period(latency_l3_miss_load_metric_id, "L3_CACHE_MISS_LOAD", MetricFlags_ValFmt_Int, threshold, metric_property_none);
+    }
 
     if (m == NULL) {
       EMSG("Error: unable to create metric #%d: %s", index, name);
@@ -1041,7 +1146,6 @@ read_fd(int fd)
 }
 
 
-
 /***************************************************************************
  * object
  ***************************************************************************/
@@ -1066,14 +1170,52 @@ void linux_perf_events_resume(){
   perf_start_all(nevents, event_thread);
 }
 
+// OUTPUT: val, it is a uint64_t array and has at least 3 elements.
+// For a counting event, val[0] is the actual value read from counter; val[1] is the time enabling; val[2] is time running
+// For a overflow event, val[0] is the actual scaled value; val[1] and val[2] are set to 0
+// RETURN: 0, sucess; -1, error
+int linux_perf_read_event_counter(int event_index, uint64_t *val){
+  sample_source_t *self = &obj_name();
+  event_thread_t *event_thread = TD_GET(ss_info)[self->sel_idx].ptr;
+
+  event_thread_t *current = &(event_thread[event_index]);
+
+  int ret = perf_read_event_counter(current, val);
+
+  if (ret < 0) return -1; // something wrong here
+
+  uint64_t sample_period = current->event->attr.sample_period;
+  if (sample_period == 0){ // counting event
+    return 0;
+  } else {
+    // overflow event
+    assert(val[1] == val[2]); //jqswang: TODO: I have no idea how to calculate the value under multiplexing for overflow event.
+    int64_t scaled_val = (int64_t) val[0] ;//% sample_period;
+    if (scaled_val >= sample_period * 10 // The counter value can become larger than the sampling period but they are usually less than 2 * sample_period
+		    || scaled_val < 0){
+	    //jqswang: TODO: it does not filter out all the invalid values
+	//fprintf(stderr, "WEIRD_COUNTER: %ld %s\n", scaled_val, current->event->metric_desc->name);
+       hpcrun_stats_num_corrected_reuse_distance_inc(1);
+       scaled_val = 0;
+    }
+   //fprintf(stderr, "%s: %lu, %lu(%ld) %lu %lu ->", current->event->metric_desc->name, current->num_overflows, val[0],val[0],val[1],val[2]);
+    val[0] = current->num_overflows * sample_period + scaled_val;
+    //fprintf(stderr, " %lu\n", val[0]);
+    val[1] = 0;
+    val[2] = 0;
+    return 0;
+  }
+}
+
+
 // ---------------------------------------------
 // signal handler
 // ---------------------------------------------
 
 static int
 perf_event_handler(
-  int sig, 
-  siginfo_t* siginfo, 
+  int sig,
+  siginfo_t* siginfo,
   void* context
 )
 {
@@ -1118,7 +1260,7 @@ perf_event_handler(
   // ----------------------------------------------------------------------------
 
   if (siginfo->si_code < 0) {
-    TMSG(LINUX_PERF, "signal si_code %d < 0 indicates not from kernel", 
+    TMSG(LINUX_PERF, "signal si_code %d < 0 indicates not from kernel",
          siginfo->si_code);
     perf_start_all(nevents, event_thread);
 
@@ -1161,7 +1303,7 @@ perf_event_handler(
   // ----------------------------------------------------------------------------
   // check #4:
   // check the index of the file descriptor (if we have multiple events)
-  // if the file descriptor is not on the list, we shouldn't store the 
+  // if the file descriptor is not on the list, we shouldn't store the
   // metrics. Perhaps we should throw away?
   // ----------------------------------------------------------------------------
 
@@ -1179,6 +1321,10 @@ perf_event_handler(
 
     return 1; // tell monitor the signal has not been handled
   }
+
+  // Increment the number of overflows for the current event
+  current->num_overflows++;
+
 
   // ----------------------------------------------------------------------------
   // parse the buffer until it finishes reading all buffers
@@ -1199,8 +1345,9 @@ perf_event_handler(
       record_sample(current, &mmap_data, context, &sv);
 
     kernel_block_handler(current, sv, &mmap_data);
+     } while (more_data);
 
-  } while (more_data);
+  perf_reset_counter(fd);
 
   perf_start_all(nevents, event_thread);
 

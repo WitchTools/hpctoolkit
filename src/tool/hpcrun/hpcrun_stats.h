@@ -52,7 +52,7 @@
 void hpcrun_stats_reinit(void);
 
 //-----------------------------
-// watchpoint 
+// watchpoint
 //-----------------------------
 void hpcrun_stats_num_samples_imprecise_inc(long val);
 long hpcrun_stats_num_samples_imprecise(void);
@@ -85,12 +85,13 @@ void hpcrun_stats_num_deadBytes_inc(long val);
 void hpcrun_stats_num_newBytes_inc(long val);
 void hpcrun_stats_num_oldBytes_inc(long val);
 void hpcrun_stats_num_oldAppxBytes_inc(long val);
-void hpcrun_stats_num_reuse_inc(long val);
+void hpcrun_stats_num_reuseTemporal_inc(long val);
+void hpcrun_stats_num_reuseSpatial_inc(long val);
 void hpcrun_stats_num_loadedBytes_inc(long val);
 
 
 //-----------------------------
-// samples total 
+// samples total
 //-----------------------------
 
 void hpcrun_stats_num_samples_total_inc(void);
@@ -98,7 +99,7 @@ long hpcrun_stats_num_samples_total(void);
 
 
 //-----------------------------
-// samples attempted 
+// samples attempted
 //-----------------------------
 
 void hpcrun_stats_num_samples_attempted_inc(void);
@@ -106,7 +107,7 @@ long hpcrun_stats_num_samples_attempted(void);
 
 
 //-----------------------------
-// samples blocked async 
+// samples blocked async
 //-----------------------------
 
 void hpcrun_stats_num_samples_blocked_async_inc(void);
@@ -114,7 +115,7 @@ long hpcrun_stats_num_samples_blocked_async(void);
 
 
 //-----------------------------
-// samples blocked dlopen 
+// samples blocked dlopen
 //-----------------------------
 
 void hpcrun_stats_num_samples_blocked_dlopen_inc(void);
